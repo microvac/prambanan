@@ -19,6 +19,7 @@ setup(name='prambanan',
       zip_safe=False,
       install_requires=[
           "simplejson",
+          "argparse",
       ],
       entry_points="""
       [console_scripts]

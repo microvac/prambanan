@@ -31,6 +31,8 @@
 
 import ast, simplejson, re, random
 from StringIO import StringIO
+import inspect
+import sys
 import engine
 from prambanan.context import Context
 from prambanan import ParseError
@@ -41,7 +43,15 @@ class Translator(ast.NodeVisitor):
     """
     Second-pass main parser.
 
-    """
+    generated variable names:
+        Prambanan.in, Prambanan.subscript, Prambanan.undescore -> same
+        module in import from -> _m_
+        builtins -> same name
+        iterator -> _i, _source, _len, etc
+        ex -> _ex
+
+
+"""
     OP_MAP = {
         "Add":	("+", 6, True), # chars, precedence, associates
         "Sub":	("-", 6, True),
@@ -49,6 +59,7 @@ class Translator(ast.NodeVisitor):
         "Div":	("/", 5, True),
         "FloorDiv":	("/", 5, True),
         "Mod":	("%", 5, True),
+        "Pow":	("", 5, True),
         #"Pow":	?,
         "LShift":	("<<", 7, True),
         "RShift":	(">>", 7, True),
@@ -65,6 +76,7 @@ class Translator(ast.NodeVisitor):
         "Not":	("!", 4, False),
 
         "Eq":	("===", 9, True),
+        "Is":	("===", 9, True),
         "NotEq":("!==", 9, True),
         "Lt":	("<", 8, True),
         "LtE":	("<=", 8, True),
@@ -99,16 +111,6 @@ class Translator(ast.NodeVisitor):
         "typeof",
         ]
 
-    BUILTINS = [
-        "bool", "int", "str", "float", "basestring", "unicode",
-        "min", "max", "abs", "round",
-        "all", "any", "reversed", "sorted", "len",
-        "filter", "map", "reduce",
-        "callable", "super", "type", "tuple", "__import__", "isinstance", "issubclass",
-        "range", "xrange", "iter",
-        "print",
-        "None", "object", "Error",
-        ]
 
     IDENTIFIER_RE = re.compile("[A-Za-z_$][0-9A-Za-z_$]*")
 
@@ -118,33 +120,28 @@ class Translator(ast.NodeVisitor):
 
     BUFFER_NAMES = [HEADER_BUFFER, BODY_BUFFER, FOOTER_BUFFER]
 
-    LIB_NAME = "Prambanan"
+    LIB_NAME = "prambanan"
 
-    def __init__(self, outfile = None, indent = "\t", namespace = "", export_map = {}, warnings = True):
-        if outfile is None:
-            outfile = StringIO()
-        self.out = outfile
-        self.indent = indent
-        self.namespace = namespace
+
+
+    def __init__(self, config):
+        self.input_name = config["input_name"]
+        self.input_lines = config["input_lines"]
+        self.out = config["output"]
+        self.indent = config["indent"]
+        self.namespace = config["namespace"]
+        self.__warnings = config["warnings"]
+        self.use_throw_helper = "use_throw_helper" in config
+
+        self.export_map = {}
         self.public_identifiers = []
-        self.export_map = export_map;
+        self.translated_names = {}
+        self.util_names = {}
         self.engine = engine.BackboneEngine()
-        self.used_builtins = []
 
         self.__mod_context = None
         self.__curr_context = None
         self.__iteratorid = 0
-        self.__warnings = warnings
-
-    def use_builtin(self, name):
-        if not name in self.used_builtins:
-            self.used_builtins.append(name)
-
-    def check_builtin_usage(self, name):
-        if name in self.BUILTINS:
-            self.use_builtin(name)
-            return True
-        return False
 
     def output(self):
         if isinstance(self.out, StringIO):
@@ -153,6 +150,12 @@ class Translator(ast.NodeVisitor):
             self.out.seek(0)
             return self.out.read()
 
+    def get_util_var_name(self, name, value):
+        if not name in self.util_names:
+            self.util_names[name] = (self.__mod_context.generate_variable(name), value)
+        varname, value = self.util_names[name]
+        return varname
+
     def visit_Module(self, mod):
         """
         Initial node.
@@ -160,7 +163,7 @@ class Translator(ast.NodeVisitor):
 
         """
         # Build context
-        self.__mod_context = Context(mod, self.BUFFER_NAMES);
+        self.__mod_context = Context(self.namespace, mod, self.BUFFER_NAMES);
         self.__curr_context = self.__mod_context
 
         if self.__mod_context.module_license != "":
@@ -184,7 +187,14 @@ class Translator(ast.NodeVisitor):
             self.__mod_context.declare_variable(k)
             self.__write_indented("%s = %s.%s;\n" % (k, self.LIB_NAME, v))
 
+        if self.use_throw_helper:
+            self.get_util_var_name("_throw", "%s.helpers.throw" % self.LIB_NAME)
+            self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
+
         public_identifiers = self.__mod_context.module_all
+        not_all_exists = public_identifiers is None
+        if not_all_exists:
+            public_identifiers = []
 
         for stmt in mod.body:
             if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and\
@@ -193,27 +203,37 @@ class Translator(ast.NodeVisitor):
                 continue
             if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
                 continue # Module docstring
+
+            if not_all_exists:
+                name = None
+                if isinstance(stmt, ast.ClassDef) or isinstance(stmt, ast.FunctionDef):
+                    name = stmt.name
+                if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and\
+                   isinstance(stmt.targets[0], ast.Name):
+                   name = stmt.targets[0].id
+                if name is not None and not name.startswith("_"):
+                    public_identifiers.append(name)
+
+
             self.__do_indent()
             self.visit(stmt)
-            if( not isinstance(stmt, ast.Import) and not isinstance(stmt, ast.ImportFrom)):
+            if( not isinstance(stmt, ast.Import) and not isinstance(stmt, ast.ImportFrom) and not isinstance(stmt, ast.Pass)):
                 self.__semicolon(stmt)
                 self.__write("\n") # Extra newline on module layer
 
         if self.namespace != "":
-            #gather all top module identifiers
-            if public_identifiers is None:
-                public_identifiers = self.__mod_context.identifiers.iterkeys()
             self.public_identifiers.extend(public_identifiers)
 
         self.__write_indented("%s.exports('%s',{\n" % (self.LIB_NAME, self.namespace))
         self.__indent()
         first = True
-        for id in self.public_identifiers:
+        for id in sorted(set(self.public_identifiers)):
             if first:
                 first = False
             else:
                 self.__write(",\n")
-            self.__write_indented("%s: %s" % (id, id))
+            name = id if id not in self.translated_names else self.translated_names[id]
+            self.__write_indented("%s: %s" % (id, name))
 
         self.__indent(False)
         self.__write("\n")
@@ -224,21 +244,34 @@ class Translator(ast.NodeVisitor):
         self.__change_buffer(self.HEADER_BUFFER)
 
         builtin_var = None
-        if len(self.used_builtins) > 0:
-            builtin_var = self.__curr_context.generate_variable("py")
-            for builtin in self.used_builtins:
+        builtins = set(self.__mod_context.all_used_builtins())
+        if len(builtins) > 0:
+            builtin_var = self.__curr_context.generate_variable("__builtin__")
+            for builtin in builtins:
                 self.__curr_context.declare_variable(builtin)
 
         self.__write_variables()
 
-        if len(self.used_builtins) > 0:
+        self.__write("\n")
+
+        if len(builtins) > 0:
             self.__indent()
             self.__do_indent()
             self.__write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
-            for builtin in self.used_builtins:
+            for builtin in builtins:
                 self.__write("%s = %s.%s;" %(builtin, builtin_var, builtin))
             self.__write("\n\n")
             self.__indent(False)
+
+        for item in self.util_names.values():
+            name, value = item
+            self.__indent()
+            self.__do_indent()
+            self.__write("%s = %s;" %(name, value))
+            self.__write("\n")
+            self.__indent(False)
+
+        self.__write("\n")
 
         self.out.write("".join(self.__mod_context.writer.buffers[self.HEADER_BUFFER]))
         self.out.write("".join(self.__mod_context.writer.buffers[self.BODY_BUFFER]))
@@ -250,7 +283,6 @@ class Translator(ast.NodeVisitor):
         from module import itema, itemb ->
             module1 = __import__('module'); itema = module1.itema; itemb = module.itemb;
         """
-        self.use_builtin("__import__")
         module = i.module
         if i.level == 1:
             if module is None:
@@ -258,11 +290,10 @@ class Translator(ast.NodeVisitor):
             else:
                 module = self.namespace+"."+module
         modulevarname = module if "." not in module else module[0:module.find(".")]
-        modulevarname = self.__curr_context.generate_variable("__m_"+modulevarname)
+        modulevarname = self.__curr_context.generate_variable("_m_"+modulevarname)
         self.__write("%s = __import__('%s'); " % (modulevarname, module))
         for name in i.names:
             varname = name.asname if name.asname else name.name
-            self.__curr_context.declare_variable(varname)
             self.__write("%s = %s.%s;  " % (varname, modulevarname, name.name))
         self.__write("\n")
 
@@ -282,7 +313,6 @@ class Translator(ast.NodeVisitor):
                 if "." in importname:
                     importname = importname[0:importname.find(".")]
                     varname = importname
-            self.__curr_context.declare_variable(varname)
             if first:
                 first = False
             else:
@@ -295,7 +325,6 @@ class Translator(ast.NodeVisitor):
 
         """
 
-        self.use_builtin("print")
         self.__write("print(")
         first = True
         for expr in p.values:
@@ -320,7 +349,7 @@ class Translator(ast.NodeVisitor):
     def visit_Call(self, c):
         """
         Translates a function/method call or class instantiation.
-
+        every named arguments became keyword arguments
         """
 
         cls = self.__curr_context.class_context()
@@ -330,17 +359,17 @@ class Translator(ast.NodeVisitor):
         call_type = None
         method_written = False
         if isinstance(c.func, ast.Name):
-            if c.func.id == "JSNative":
+            if c.func.id == "JS":
                 if len(c.args) != 1:
-                    raise ParseError("native js only accept one argument (line %d)" % (c.lineno))
+                    raise ParseError("native js only accept one argument", c.lineno, c.col_offset)
                 if not isinstance(c.args[0], ast.Str):
-                    raise ParseError("native js only accept string (line %d)" % (c.lineno))
-                self.__write(c.args[0].s)
+                    raise ParseError("native js only accept string",c.lineno, c.col_offset)
+                self.__write(re.sub(r'(?:@{{[!]?)([^}}]*)(?:}})', r"\1",c.args[0].s))
                 return
 
             call_type = "name"
-            if self.check_builtin_usage(c.func.id):
-                if c.func.id != "object":
+            if self.__curr_context.check_builtin_usage(c.func.id):
+                if c.func.id in Context.BUILTINS_FUNC:
                     type = "Function"
                 else:
                     type = "Class"
@@ -356,11 +385,10 @@ class Translator(ast.NodeVisitor):
                 if c.func.value.func.id == "super":
                     # A super call
                     if (not len(c.func.value.args) == 2):
-                        raise ParseError("Only python 2 simple super supported (line %d)" % (c.lineno))
+                        raise ParseError("Only python 2 simple super supported", c.lineno, c.col_offset)
                     attrname = c.func.attr
-                    if attrname == "__init__":
-                        attrname = "constructor"
-                    self.__write("_.bind(%s.__super__.%s, this)" % (c.func.value.args[0].id, attrname))
+                    self.__write("%s(" % self.get_util_var_name("_super", "%s.helpers.super" % self.LIB_NAME))
+                    self.__write("this, '%s')" %  attrname)
                     method_written = True
                     type = "Function"
             elif isinstance(c.func.value, ast.Name) and c.func.value.id == "self":
@@ -383,9 +411,35 @@ class Translator(ast.NodeVisitor):
                         if ctx is not None and len(attrlst) == 0: # Win
                             type = ctx.type
                             break
+                    if type is None:
+                            imports = self.__curr_context.all_imports()
+                            if value.id in imports:
+                                importname, varname = imports[value.id]
+                                try:
+                                    __import__(importname)
+                                    obj = sys.modules[importname]
+                                    if varname is not None: obj = getattr(obj, varname)
+                                    attrError = False
+                                    for attr in reversed(attrlst):
+                                        try:
+                                            obj = getattr(obj, attr)
+                                        except AttributeError:
+                                            print "attr error"
+                                            attrError = True
+                                            break
+                                    if not attrError:
+                                        if inspect.isfunction(obj) or inspect.ismethod(obj):
+                                            type = "Function"
+                                        elif inspect.isclass(obj):
+                                            type = "Class"
+                                except AttributeError:
+                                    print "attr after import error"
+                                except ImportError:
+                                    print "import error"
 
-        if type is None and self.__warnings:
-            print " Warning: Cannot infer type [ call: %s, name: %s ] in line %s" % (call_type, name, c.lineno )
+
+        if type is None and "type" in self.__warnings:
+            sys.stderr.write(" Warning: Cannot infer type [ call: %s, name: %s ] in line %s\n" % (call_type, name, c.lineno ))
         elif type == "Class":
             self.__write("new ")
 
@@ -413,7 +467,9 @@ class Translator(ast.NodeVisitor):
         elif n.id == "None":
             self.__write("null")
         elif n.id in self.RESERVED_WORDS:
-            raise ParseError("`%s` is a reserved word and cannot be used as an identifier (line %d)" % (n.id, n.lineno))
+            if not n.id in self.translated_names:
+                self.translated_names[n.id] = self.__mod_context.generate_variable("__keyword_"+n.id)
+            self.__write(self.translated_names[n.id])
         else:
             self.__write(n.id)
 
@@ -440,6 +496,12 @@ class Translator(ast.NodeVisitor):
                     self.visit(elt)
             else:
                 self.visit(o.right)
+            self.__write(")")
+        elif isinstance(o.op, ast.Pow):
+            self.__write("%s(" % self.get_util_var_name("_pow", "%s.helpers.pow" % self.LIB_NAME))
+            self.visit(o.left)
+            self.__write(", ")
+            self.visit(o.right)
             self.__write(")")
         else:
             chars, prec, assoc = self.__get_op_cpa(o.op)
@@ -484,16 +546,24 @@ class Translator(ast.NodeVisitor):
         Translate a compare block.
 
         """
-        self.visit(c.left)
-
         if len(c.ops) > 1:
-            raise ParseError("Comparisons with more than one operator are not supported (line %d)" % (c.lineno))
+            raise ParseError("Comparisons with more than one operator are not supported", c.lineno, c.col_offset)
 
         op, expr = c.ops[0], c.comparators[0]
-        if isinstance(op, ast.Is) and expr.id == "None":
-            self.__write(" === %s.None" % self.LIB_NAME)
-        elif isinstance(op, ast.IsNot) and expr.id == "None":
-            self.__write(" !== %s.null" % self.LIB_NAME)
+
+        if not isinstance(op, ast.In) and not isinstance(op, ast.NotIn):
+            self.visit(c.left)
+
+        if isinstance(op, ast.IsNot) and expr.id == "None":
+            self.__write(" !== .null")
+        elif isinstance(op, ast.In) or isinstance(op, ast.NotIn):
+            if isinstance(op, ast.NotIn):
+                self.__write(" !")
+            self.__write(" %s( " % self.get_util_var_name("_in", "%s.helpers.in"%self.LIB_NAME))
+            self.visit(c.left)
+            self.__write(", ")
+            self.visit(expr)
+            self.__write(")")
         else:
             self.__write(" %s " % (self.__get_op(op)))
             prec, assoc = self.__get_expr_pa(expr)
@@ -506,8 +576,7 @@ class Translator(ast.NodeVisitor):
         Declares variables as global.
 
         """
-        for name in g.names:
-            self.__curr_context.declare_variable(name)
+        pass
 
     def visit_Lambda(self, l):
         """
@@ -526,7 +595,7 @@ class Translator(ast.NodeVisitor):
 
         """
         self.__write("yield ")
-        self.visit(l.value)
+        self.visit(y.value)
 
     def visit_Return(self, r):
         """
@@ -572,7 +641,7 @@ class Translator(ast.NodeVisitor):
             if isinstance(key, ast.Num):
                 self.__write_indented("%d: " % (key.n))
             elif not isinstance(key, ast.Str):
-                raise ParseError("Only numbers and string literals are allowed in dictionary expressions (line %d)" % (key.lineno))
+                raise ParseError("Only numbers and string literals are allowed in dictionary expressions", key.lineno, key.col_offset)
             else:
                 if self.IDENTIFIER_RE.match(key.s):
                     self.__write_indented("%s: " % (key.s))
@@ -592,8 +661,8 @@ class Translator(ast.NodeVisitor):
         """
 
         #   optimize simple index slice
-        if isinstance(s.ctx, ast.Load) or isinstance(s.ctx, ast.Assign) :
-            if isinstance(s.slice, ast.Index):
+        if isinstance(s.ctx, ast.Load) or isinstance(s.ctx, ast.Assign) or isinstance(s.ctx, ast.Store) :
+            if isinstance(s.slice, ast.Index) and isinstance(s.slice.value, ast.Num) and s.slice.value.n >= 0:
                 self.visit(s.value)
                 self.__write('[')
                 self.visit(s.slice.value)
@@ -607,10 +676,12 @@ class Translator(ast.NodeVisitor):
             func = "del"
         elif isinstance(s.ctx, ast.Assign):
             func = "assign"
+        elif isinstance(s.ctx, ast.Store):
+            func = "assign"
         else:
-            raise ParseError("Subscript with context '%s' is not supported (line %d)" % (str(s.ctx.__class__.__name__), s.lineno))
+            raise ParseError("Subscript with context '%s' is not supported" % (str(s.ctx.__class__.__name__)), s.lineno, s.col_offset)
 
-        self.__write("%s.subscript('%s'," % (self.LIB_NAME, func))
+        self.__write("%s('%s'," % (self.get_util_var_name("_subscript", ("%s.helpers.subscript" % self.LIB_NAME)), func))
         self.visit(s.value)
         self.__write(", ")
         if isinstance(s.slice, ast.Index):
@@ -633,7 +704,7 @@ class Translator(ast.NodeVisitor):
             else:
                 self.__write("null")
         else:
-            raise ParseError("Subscript slice type '%s' is not supported (line %d)" % (str(s.slice.__class__.__name__), s.lineno))
+            raise ParseError("Subscript slice type '%s' is not supported" % (str(s.slice.__class__.__name__)), s.lineno, s.col_offset)
         self.__write(")")
 
     def visit_Delete(self, d):
@@ -645,7 +716,7 @@ class Translator(ast.NodeVisitor):
             if isinstance(target, ast.Subscript):
                 self.visit(target)
             else:
-                self.__write("delete")
+                self.__write("delete ")
                 self.visit(target)
 
 
@@ -658,25 +729,53 @@ class Translator(ast.NodeVisitor):
         is_class = self.__curr_context.type == "Class"
 
         if len(a.targets) > 1 and is_class:
-            raise ParseError("Cannot handle multiple assignment on class context (line %d)" % (a.lineno))
+            raise ParseError("Cannot handle multiple assignment on class context", a.targets[0].lineno, a.targets[1].col_offset)
 
-        #variable declarations
-        first = True
-        if not is_class:
-            for target in a.targets:
-                if isinstance(target, ast.Name):
-                    self.__curr_context.declare_variable(target.id)
-
+        is_target_tuple = False
+        tuple_target = None
         for target in a.targets:
-            if is_class and not isinstance(target, ast.Name):
-                raise ParseError("Only simple variable assignments are allowed on class scope (line %d)" % (a.targets[0].id, a.lineno))
-            self.visit(target)
-            if is_class:
-                self.__write(": ")
-            else:
-                self.__write(" = ")
+            if isinstance(target, ast.Tuple):
+                is_target_tuple = True
+                tuple_target = target
 
-        self.visit(a.value)
+        if is_target_tuple and len(a.targets) > 1:
+            raise ParseError("tuple are not allowed on multiple assignment", tuple_target.lineno, tuple_target.col_offset)
+
+        if is_target_tuple and is_class:
+            raise ParseError("tuple assignment are not allowed on class scope", tuple_target.lineno, tuple_target.col_offset)
+
+        if is_target_tuple:
+            self.__write("(function(_source){")
+            tuple = a.targets[0]
+            for i in range(0, len(target.elts)):
+                elt = tuple.elts[i]
+                self.visit(elt)
+                self.__write(" = _source[%d]; " % i)
+            self.__write("})(")
+        else:
+            for target in a.targets:
+                if is_class and not isinstance(target, ast.Name):
+                    raise ParseError("Only simple variable assignments are allowed on class scope", target.lineno, target.col_offset)
+                self.visit(target)
+                if is_class:
+                    self.__write(": ")
+                else:
+                    self.__write(" = ")
+
+        if isinstance(a.value, ast.Tuple):
+            self.__write("[")
+            first = True
+            for elt in a.value.elts:
+                if first:
+                    first = False
+                else:
+                    self.__write(", ")
+                self.visit(elt)
+            self.__write("]")
+        else:
+            self.visit(a.value)
+        if is_target_tuple:
+            self.__write(")")
 
     def visit_AugAssign(self, a):
         """
@@ -804,7 +903,7 @@ class Translator(ast.NodeVisitor):
 
         """
         if len(w.orelse) > 0:
-            raise ParseError("`else` branches of the `while` statement are not supported (line %d)" % (w.lineno))
+            raise ParseError("`else` branches of the `while` statement are not supported", w.orelse[0].lineno, w.orelse[0].col_offset)
 
         self.__write("while (")
         self.visit(w.test)
@@ -830,8 +929,6 @@ class Translator(ast.NodeVisitor):
         Translate a for loop.
 
         """
-        if len(f.orelse) > 0:
-            raise ParseError("`else` branches of the `for` statement are not supported (line %d)" % (f.lineno))
 
         # -- This solution is needed to keep all semantics --
         #
@@ -850,8 +947,17 @@ class Translator(ast.NodeVisitor):
 
         i_var = self.__curr_context.generate_variable("_i")
         len_var = self.__curr_context.generate_variable("_len")
-        iter_var = f.target.id
-        self.__curr_context.declare_variable(iter_var)
+        is_tuple = False
+        iter_var = None
+
+        if isinstance(f.target, ast.Name):
+            iter_var = f.target.id
+        else:
+            is_tuple = True
+            iter_var = []
+            for elt in f.target.elts:
+                t = elt.id
+                iter_var.append(t)
 
         list_var = self.__curr_context.generate_variable("_list")
         self.__write("%s = " % list_var)
@@ -862,15 +968,32 @@ class Translator(ast.NodeVisitor):
         self.__write("for (%s = 0, %s = %s.length; %s < %s; %s++) {\n" % (i_var, len_var, list_var, i_var, len_var, i_var))
         self.__indent()
         self.__do_indent()
-        self.__write("%s = %s[%s];\n" % (iter_var, list_var, i_var))
+
+        if not is_tuple:
+            self.__write("%s = %s[%s];\n" % (iter_var, list_var, i_var))
+        else:
+            for i in range(0, len(iter_var)):
+                if i != 0:
+                    self.__do_indent()
+                self.__write("%s = %s[%s][%d];\n" % (iter_var[i], list_var, i_var, i))
 
         for stmt in f.body:
             self.__do_indent()
             self.visit(stmt)
             self.__semicolon(stmt)
         self.__indent(False)
-
         self.__write_indented("}\n")
+
+        if len(f.orelse) > 0:
+            self.__write_indented("if(%s == %s){\n" % (i_var, len_var))
+            self.__indent(True)
+            for stmt in f.orelse:
+                self.__do_indent()
+                self.visit(stmt)
+                self.__semicolon(stmt)
+            self.__indent(False)
+            self.__write_indented("}\n")
+
         self.__iteratorid -= 1
 
     def visit_ClassDef(self, c):
@@ -880,7 +1003,8 @@ class Translator(ast.NodeVisitor):
         functions and assignments.
 
         """
-        self.__curr_context.declare_variable(c.name)
+        fullname = "t__%s_" % c.name if self.namespace == "" else "t_%s_%s" % (self.namespace.replace(".", "_"), c.name)
+        ctor_name = self.__curr_context.generate_variable("%s" % fullname)
         self.__push_context(c.name)
 
         self.__change_buffer(self.HEADER_BUFFER)
@@ -890,6 +1014,8 @@ class Translator(ast.NodeVisitor):
             self.__write_docstring(self.__curr_context.docstring)
             self.__do_indent()
 
+        self.__write("function %s(){ this.__init__.apply(this, arguments); }\n " % (ctor_name))
+        self.__do_indent()
         self.__write("%s = " % (c.name))
 
         decorators = self.__get_decorators(c)
@@ -897,16 +1023,17 @@ class Translator(ast.NodeVisitor):
             for expr in decorators["Export"]:
                 self.__write("%s.%s = " % (expr.s, c.name))
 
+        if len(c.bases) > 1 :
+            raise ParseError("Could not do multiple inheritance",  c.lineno, c.bases[1].col_offset)
+
         bases = filter(lambda b: not isinstance(b, ast.Name) or b.id != "object", c.bases)
         if len(bases) > 0:
             self.visit(bases[0])
         else:
-            self.use_builtin("object")
             self.__write("object")
 
-        self.__write(".extend({\n")
+        self.__write(".extend({constructor: %s" % ctor_name)
         self.__indent()
-
 
         self.__change_buffer(self.BODY_BUFFER)
         # Base classes
@@ -931,21 +1058,31 @@ class Translator(ast.NodeVisitor):
                     continue
             if first:
                 first = False
-            else:
+            if not isinstance(stmt, ast.Pass):
                 self.__write(",\n")
             if isinstance(stmt, ast.FunctionDef):
                 self.__write("\n")
+            if not isinstance(stmt, ast.Pass):
+                self.__do_indent()
+            self.visit(stmt)
+        if len(statics) > 0:
+            self.__write("\n")
+            self.__indent(False)
+            self.__write_indented("},\n")
+            self.__write_indented("{\n" )
+            self.__indent(True)
+            self.__write_indented("/* static methods */\n")
+        first = True
+        for stmt in statics:
+            if first:
+                first = False
+            else:
+                self.__write(",\n")
             self.__do_indent()
             self.visit(stmt)
-
         self.__write("\n")
         self.__indent(False)
-
         self.__write_indented("})")
-        for stmt in statics:
-            self.__write(";\n")
-            self.__do_indent()
-            self.visit(stmt)
         self.__pop_context()
 
     def visit_FunctionDef(self, f):
@@ -955,7 +1092,6 @@ class Translator(ast.NodeVisitor):
         or `name: function (...)`.
 
         """
-        self.__curr_context.declare_variable(f.name)
         self.__push_context(f.name)
         self.__change_buffer(self.HEADER_BUFFER)
 
@@ -970,12 +1106,7 @@ class Translator(ast.NodeVisitor):
             self.__write_docstring(self.__curr_context.docstring)
             self.__do_indent()
         if is_method:
-            if is_static:
-                self.__write("%s.%s = function (" % (self.__curr_context.class_context().name, f.name))
-            elif f.name == "__init__":
-                self.__write("constructor: function (")
-            else:
-                self.__write("%s: function (" % (f.name))
+            self.__write("%s: function (" % (f.name))
         else:
             self.__write("%s = function (" % (f.name))
 
@@ -1049,26 +1180,62 @@ class Translator(ast.NodeVisitor):
         self.__indent(False)
         self.__write_indented("}\n")
 
-        if len(tf.handlers) > 1:
-            raise ParseError("could not handle exception with more than 1 handler, line: %d" % tf.lineno)
-
-        handler = tf.handlers[0]
+        ex_var = self.__curr_context.generate_variable("_ex")
         self.__write_indented("catch")
-        if handler.name is not None:
-            self.__write("(%s)" % handler.name.id)
-        else:
-            self.__write("($ex)")
-        self.__write("{\n")
+        self.__write("(%s){\n" % ex_var)
         self.__indent()
-        for stmt in handler.body:
-            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
-                continue # Skip docstring
-            if isinstance(stmt, ast.Global): # The `global` statement is invisible
+        has_first = False
+        has_catch_all = False
+        for handler in tf.handlers:
+            has_if = False
+            if handler.type is not None:
+                self.__do_indent()
+                if has_first:
+                    self.__write("else ")
+                if(isinstance(handler.type, ast.Attribute) or isinstance(handler.type, ast.Name)):
+                    self.__write("if (%s instanceof " %(ex_var))
+                    self.visit(handler.type)
+                    self.__write("){\n");
+                elif(isinstance(handler.type, ast.Tuple)):
+                    self.__write("if (");
+                    firstElt = True
+                    for elt in handler.type.elts:
+                        if firstElt:
+                            firstElt = False
+                        else:
+                            self.__write(" || ")
+                        self.__write("(%s instanceof " %(ex_var))
+                        self.visit(elt)
+                        self.__write(")");
+                    self.__write("{\n");
+                has_if = has_first = True
+                self.__indent()
+            else:
+                has_catch_all = True
+                if has_first:
+                    self.__do_indent()
+                    self.__write("else { \n")
+                    has_if = True
+                    self.__indent()
+                has_first = True
+            if handler.name is not None:
+                self.__do_indent()
+                self.__write("%s = %s;\n" %(handler.name.id, ex_var))
+            for stmt in handler.body:
+                if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
+                    continue # Skip docstring
+                if isinstance(stmt, ast.Global): # The `global` statement is invisible
+                    self.visit(stmt)
+                    continue
+                self.__do_indent()
                 self.visit(stmt)
-                continue
-            self.__do_indent()
-            self.visit(stmt)
-            self.__semicolon(stmt)
+                self.__semicolon(stmt)
+            if has_if:
+                self.__indent(False)
+                self.__write_indented("}\n");
+        if not has_catch_all:
+            if has_first:
+                self.__write_indented("else { throw %s;}\n" % ex_var)
         self.__indent(False)
         self.__write_indented("}\n");
 
@@ -1081,12 +1248,21 @@ class Translator(ast.NodeVisitor):
             })();
         """
         if len(lc.generators) > 1:
-            raise ParseError("Could only support one generator now ' (line %d)" %  node.lineno)
+            raise ParseError("Could only support one generator now",  lc.generators[1].target.lineno, lc.generators[1].target.col_offset)
 
         f = lc.generators[0]
 
-        iter_var = f.target.id
-        self.__curr_context.declare_variable(iter_var)
+        is_tuple = False
+        iter_var = None
+
+        if isinstance(f.target, ast.Name):
+            iter_var = f.target.id
+        else:
+            is_tuple = True
+            iter_var = []
+            for elt in f.target.elts:
+                t = elt.id
+                iter_var.append(t)
 
         self.__push_context(lc.name)
         self.__change_buffer(self.HEADER_BUFFER)
@@ -1103,22 +1279,21 @@ class Translator(ast.NodeVisitor):
         self.__write("%s = []; " % results_var)
 
         list_var = self.__curr_context.generate_variable("_list")
-        self.__write("%s = %s.iter(" % (list_var, self.LIB_NAME))
-
-        if isinstance(f.iter, ast.Call) and isinstance(f.iter.func, ast.Attribute):
-            attr = f.iter.func
-            self.visit(attr.value)
-            self.__write(", '%s'" % attr.attr)
-        else:
-            self.visit(f.iter)
-
+        self.__write("%s = %s(" % (list_var, self.get_util_var_name("_iter", "%s.helpers.iter" %self.LIB_NAME)))
+        self.visit(f.iter)
         self.__write(");\n")
 
         self.__do_indent()
         self.__write("for (%s = 0, %s = %s.length; %s < %s; %s++) {\n" % (i_var, len_var, list_var, i_var, len_var, i_var))
         self.__indent()
         self.__do_indent()
-        self.__write("%s = %s[%s];\n" % (iter_var, list_var, i_var))
+        if not is_tuple:
+            self.__write("%s = %s[%s];\n" % (iter_var, list_var, i_var))
+        else:
+            for i in range(0, len(iter_var)):
+                if i != 0:
+                    self.__do_indent()
+                self.__write("%s = %s[%s][%d];\n" % (iter_var[i], list_var, i_var, i))
         self.__do_indent()
         for _if in f.ifs:
             self.__write("if (")
@@ -1135,8 +1310,34 @@ class Translator(ast.NodeVisitor):
         self.__pop_context()
 
 
+    def visit_Raise(self, r):
+        if self.use_throw_helper:
+            throw, how = self.util_names["_throw"]
+            self.__write("%s("% throw)
+        else:
+            self.__write("throw ")
+        self.visit(r.type)
+        if self.use_throw_helper:
+            file, how = self.util_names["__py_file__"]
+            self.__write(",%s,%d)" % ( file, r.lineno))
+
+    def visit_Assert(self, a):
+        pass
+
+    def visit_Tuple(self, t):
+        self.__write("[")
+        first = True
+        for elt in t.elts:
+            if first:
+                first = False
+            else:
+                self.__write(", ")
+            self.visit(elt)
+        self.__write("]")
+
+
     def generic_visit(self, node):
-        raise ParseError("Could not parse node type '%s' (line %d)" % (str(node.__class__.__name__), node.lineno))
+        raise ParseError("Could not parse node type '%s'" % str(node.__class__.__name__), node.lineno, node.col_offset)
 
     def __parse_args(self, args, strip_first = False):
         """
@@ -1153,22 +1354,31 @@ class Translator(ast.NodeVisitor):
             else:
                 self.__write(", ")
             self.visit(arg)
-        if getattr(args, "vararg", None) is not None:
-            raise ParseError("Variable arguments on function definitions are not supported")
+        #if getattr(args, "vararg", None) is not None:
+        #    raise ParseError("Variable arguments on function definitions are not supported")
 
     def __parse_defaults(self, args):
         """
         Translate the default arguments list.
-
+            (a, b) -> (a, b)
+            (a, b=3)-> (a, b)
+                        if(_.isUndefined(b)) a = 3;
+            (a, b=3, *args)-> (a, b)->
+                        if(_.isUndefined(b)) a = 3;
+                        args = Prambanan.varargs(arguments, 2) // 2 is non var args variablej
+            (a, b=3, **kwargs) ->
+                    args = Prambanan.kwargs(arguments, 2)
         """
         if len(args.defaults) > 0:
             first = len(args.args) - len(args.defaults)
             for i in xrange(len(args.defaults)):
-                self.__write_indented("if (!$defined(")
+                self.__write_indented("if (%s(" % self.get_util_var_name("_isUndefined", ("%s.helpers._.isUndefined" % self.LIB_NAME)))
+
                 self.visit(args.args[first+i])
                 self.__write(")) ")
                 self.visit(args.args[first+i])
                 self.__write(" = ")
+                #change to prambanan default args
                 self.visit(args.defaults[i])
                 self.__write(";\n")
 
@@ -1187,7 +1397,7 @@ class Translator(ast.NodeVisitor):
                     if dec.id == "JSNoOp":
                         decorators["JSNoOp"] = []
                         continue
-                raise ParseError("This function decorator is not supported. Only @staticmethod is supported for now. (line %d)" % (stmt.lineno))
+                raise ParseError("This function decorator is not supported. Only @staticmethod is supported for now.", dec.lineno, dec.col_offset)
         else:
             for dec in stmt.decorator_list:
                 if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name):
@@ -1200,7 +1410,7 @@ class Translator(ast.NodeVisitor):
                 if isinstance(dec, ast.Name) and dec.id == "Class":
                     decorators["Class"] = []
                     continue
-                raise ParseError("This class decorator is not supported. Only decorators of pycow.decorators are supported (line %d)" % (stmt.lineno))
+                raise ParseError("This class decorator is not supported. Only decorators of pycow.decorators are supported",dec.lineno, dec.col_offset)
         return decorators
 
     def __get_op(self, op):
@@ -1274,7 +1484,7 @@ class Translator(ast.NodeVisitor):
         if len(self.__curr_context.variables) > 0:
             self.__do_indent()
             first = True
-            for variable in self.__curr_context.variables:
+            for variable in sorted(self.__curr_context.variables):
                 if first:
                     self.__write("var ")
                     first = False
@@ -1302,8 +1512,10 @@ class Translator(ast.NodeVisitor):
         """
         self.__change_buffer(self.HEADER_BUFFER)
         is_class = self.__curr_context.type == "Class"
+
         if not is_class:
             self.__write_variables()
+
         self.__curr_context.parent.writer.buffers[self.BODY_BUFFER].extend(self.__curr_context.writer.buffers[self.HEADER_BUFFER])
         self.__curr_context.parent.writer.buffers[self.BODY_BUFFER].extend(self.__curr_context.writer.buffers[self.BODY_BUFFER])
         self.__curr_context = self.__curr_context.parent
@@ -1323,10 +1535,10 @@ class Translator(ast.NodeVisitor):
     def __build_namespace(self, namespace):
         namespace = namespace.split(".")
 
-        self.__write("window.%s = _.isUndefined(window.%s) ? {} : window.%s;\n" % (namespace[0], namespace[0], namespace[0]))
+        self.__write("window.%s = %s._.isUndefined(window.%s) ? {} : window.%s;\n" % (self.LIB_NAME, namespace[0], namespace[0], namespace[0]))
 
         for i in xrange(1, len(namespace) - 1):
-            self.__write("%s.%s = _.isUndefined(%s.%s) ? {} : %s.%s;\n" % (namespace[i-1], namespace[0], namespace[i-1], namespace[0], namespace[i-1], namespace[0]))
+            self.__write("%s.%s = %s._.isUndefined(%s.%s) ? {} : %s.%s;\n" % (self.LIB_NAME, namespace[i-1], namespace[0], namespace[i-1], namespace[0], namespace[i-1], namespace[0]))
         self.__write("\n")
 
 def translate_string(input, indent = "\t", namespace = "", warnings = True):
@@ -1342,20 +1554,14 @@ def translate_string(input, indent = "\t", namespace = "", warnings = True):
 
 
 def translate_files(config):
-    in_filenames = config["in_filenames"]
-    out_filename = config["out_filename"]
-    indent = config["indent"]
-    namespace = config["namespace"]
-    warnings = config["warnings"]
-
-    outfile = open(out_filename, "w")
-    export_map = {"jq": "jQuery", "_":"underscore"};
-    moo = Translator(outfile, indent, namespace, export_map, warnings)
+    config["use_throw_helper"] = True
+    moo = Translator(config)
+    tree = None
     try:
-        for in_filename in in_filenames:
-            input = open(in_filename, "r").read()
-            moo.visit(ast.parse(input, in_filename))
-    finally:
-        outfile.close()
+        tree = ast.parse(config["input"], config["input_name"])
+    except SyntaxError as e:
+        raise ParseError(e.msg, e.lineno, e.offset, True)
+
+    moo.visit(tree)
 
 

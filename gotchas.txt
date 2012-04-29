@@ -1,0 +1,40 @@
+tuple:
+    are Array
+
+list:
+    are Array,
+    and by default Array.prototype are monkey patched with, pop, append, etc
+
+dict:
+    are Object,
+    and Object protoype is not monkey patched so there are no:
+        items, (use enumerate(dict) instead)
+        keys, (use iter(dict) instead)
+        etc
+loop:
+    for translated to for i, so even xrange are not lazy
+
+function call:
+    every named arguments became keyword arguments i.e
+    fn(52, action="go") ->
+        fn(52, Prambanan.makekwargs({"action": "go"})
+
+callable:
+    not supported
+
+__add__, __sub__ not supported:
+    use manually e.g. new datetime().__add__(new timedelta())
+
+#Not supported and will error:
+
+tuple variable in class declaration
+multiple assignment in class declaration
+multiple inheritance is not supported
+while else
+list comprehension with more than one generator
+decorators that only supported, @staticmethod, @JS_NoOp
+python 3 super
+literals in dictionary key which are not string or number
+comparison with more than one operator -> 10 > a > 13
+yield
+
