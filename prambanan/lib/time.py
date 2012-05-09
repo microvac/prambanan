@@ -120,12 +120,12 @@ def localtime(t=None):
 def mktime(t):
     """mktime(tuple) -> floating point number
     Convert a time tuple in local time to seconds since the Epoch."""
-    tm_year = t[0]
-    tm_mon = t[1] - 1
-    tm_mday = t[2]
-    tm_hour = t[3]
-    tm_min = t[4]
-    tm_sec = t[5]
+    tm_year = t.tm_year
+    tm_mon = t.tm_mon - 1
+    tm_mday = t.tm_mday
+    tm_hour = t.tm_hour
+    tm_min = t.tm_min
+    tm_sec = t.tm_sec
     date = JS("new Date(@{{tm_year}}, @{{tm_mon}}, @{{tm_mday}}, @{{tm_hour}}, @{{tm_min}}, @{{tm_sec}})") # local time
     utc = JS("Date.UTC(@{{tm_year}}, @{{tm_mon}}, @{{tm_mday}}, @{{tm_hour}}, @{{tm_min}}, @{{tm_sec}})")/1000
     ts = date.getTime() / 1000
@@ -141,14 +141,14 @@ def strftime(fmt, t=None):
     else:
         if not isinstance(t, struct_time) and len(t) != 9:
             raise TypeError('argument must be 9-item sequence, not float')
-    tm_year = t[0]
-    tm_mon = t[1]
-    tm_mday = t[2]
-    tm_hour = t[3]
-    tm_min = t[4]
-    tm_sec = t[5]
-    tm_wday = t[6]
-    tm_yday = t[7]
+    tm_year = t.tm_year
+    tm_mon = t.tm_mon
+    tm_mday = t.tm_mday
+    tm_hour = t.tm_hour
+    tm_min = t.tm_min
+    tm_sec = t.tm_sec
+    tm_wday = t.tm_wday
+    tm_yday = t.tm_yday
     date = JS("new Date(@{{tm_year}}, @{{tm_mon}} - 1, @{{tm_mday}}, @{{tm_hour}}, @{{tm_min}}, @{{tm_sec}})")
     startOfYear = JS("new Date(@{{tm_year}},0,1)")
     firstMonday = 1 - ((startOfYear.getDay() + 6) % 7) + 7
@@ -212,7 +212,7 @@ def strftime(fmt, t=None):
     re_pct = JS("/([^%]*)%(.)(.*)/")
     JS("var a, fmtChar;")
     while remainder:
-        JS("""
+        JS("""{
         @{{!a}} = @{{re_pct}}.exec(@{{remainder}});
         if (!@{{!a}}) {
             @{{result}} += @{{remainder}};
@@ -225,13 +225,15 @@ def strftime(fmt, t=None):
                 @{{result}} += @{{format}}(@{{!fmtChar}});
             }
         }
-        """)
+       }""")
     return str(result)
 
 def asctime(t=None):
     if t is None:
         t = localtime()
-    return "%s %s %02d %02d:%02d:%02d %04d" % (__c__days[(t[6]+1)%7][:3], __c__months[t[1]-1], t[2], t[3], t[4], t[5], t[0])
+    return "%s %s %02d %02d:%02d:%02d %04d" % (__c__days[(t.tm_wday-1)%7][:3],
+                                               __c__months[t.tm_mon-1],
+                                               t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, t.tm_year)
 
 def ctime(t=None):
     return asctime(localtime(t))

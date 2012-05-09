@@ -304,12 +304,12 @@
 	 */
 	mktime = function (t) {
 		var date, tm_hour, tm_mday, tm_min, tm_mon, tm_sec, tm_year, ts, utc; 
-		tm_year = t[0];
-		tm_mon = t[1] - 1;
-		tm_mday = t[2];
-		tm_hour = t[3];
-		tm_min = t[4];
-		tm_sec = t[5];
+		tm_year = t.tm_year;
+		tm_mon = t.tm_mon - 1;
+		tm_mday = t.tm_mday;
+		tm_hour = t.tm_hour;
+		tm_min = t.tm_min;
+		tm_sec = t.tm_sec;
 		date = new Date(tm_year, tm_mon, tm_mday, tm_hour, tm_min, tm_sec);
 		utc = Date.UTC(tm_year, tm_mon, tm_mday, tm_hour, tm_min, tm_sec) / 1000;
 		ts = date.getTime() / 1000;
@@ -328,14 +328,14 @@
 			t = localtime();
 		else if (!isinstance(t, struct_time) && len(t) !== 9)
 			_throw(new TypeError("argument must be 9-item sequence, not float"),__py_file__,143);
-		tm_year = t[0];
-		tm_mon = t[1];
-		tm_mday = t[2];
-		tm_hour = t[3];
-		tm_min = t[4];
-		tm_sec = t[5];
-		tm_wday = t[6];
-		tm_yday = t[7];
+		tm_year = t.tm_year;
+		tm_mon = t.tm_mon;
+		tm_mday = t.tm_mday;
+		tm_hour = t.tm_hour;
+		tm_min = t.tm_min;
+		tm_sec = t.tm_sec;
+		tm_wday = t.tm_wday;
+		tm_yday = t.tm_yday;
 		date = new Date(tm_year, tm_mon - 1, tm_mday, tm_hour, tm_min, tm_sec);
 		startOfYear = new Date(tm_year,0,1);
 		firstMonday = 1 - startOfYear.getDay() + 6 % 7 + 7;
@@ -400,7 +400,7 @@
 		re_pct = /([^%]*)%(.)(.*)/;
 		var a, fmtChar;;
 		while (remainder)
-			
+			{
         a = re_pct.exec(remainder);
         if (!a) {
             result += remainder;
@@ -413,7 +413,7 @@
                 result += format(fmtChar);
             }
         }
-        ;
+       };
 		return str(result);
 	};
 
@@ -421,7 +421,7 @@
 		if (_isUndefined(t)) t = null;
 		if (t === null)
 			t = localtime();
-		return "%s %s %02d %02d:%02d:%02d %04d".sprintf(_subscript('load',_subscript('load',__c__days, 'index', t[6] + 1 % 7), 'slice', null, 3, null), _subscript('load',__c__months, 'index', t[1] - 1), t[2], t[3], t[4], t[5], t[0]);
+		return "%s %s %02d %02d:%02d:%02d %04d".sprintf(_subscript('load',_subscript('load',__c__days, 'index', t.tm_wday - 1 % 7), 'slice', null, 3, null), _subscript('load',__c__months, 'index', t.tm_mon - 1), t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, t.tm_year);
 	};
 
 	ctime = function (t) {
@@ -522,7 +522,7 @@ function strptime(datestring, format) {
 			return float(strptime(datestring.valueOf(), format.valueOf()).getTime() / 1000.0);
 		}
 		catch(_ex){
-			_throw(new ValueError("Invalid or unsupported values for strptime: '%s', '%s'".sprintf(datestring, format)),__py_file__,335);
+			_throw(new ValueError("Invalid or unsupported values for strptime: '%s', '%s'".sprintf(datestring, format)),__py_file__,337);
 		}
 	};
 
@@ -534,7 +534,7 @@ function strptime(datestring, format) {
 			return tt;
 		}
 		catch(_ex){
-			_throw(new ValueError("Invalid or unsupported values for strptime: '%s', '%s'".sprintf(datestring, format)),__py_file__,343);
+			_throw(new ValueError("Invalid or unsupported values for strptime: '%s', '%s'".sprintf(datestring, format)),__py_file__,345);
 		}
 	};
 
