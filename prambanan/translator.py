@@ -137,6 +137,7 @@ class Translator(ast.NodeVisitor):
         self.translated_names = {}
         self.util_names = {}
         self.engine = engine.BackboneEngine()
+        self.bare = False;
 
         self.__mod_context = None
         self.__curr_context = None
@@ -165,33 +166,35 @@ class Translator(ast.NodeVisitor):
         self.__mod_context = Context(self.namespace, mod, self.BUFFER_NAMES);
         self.__curr_context = self.__mod_context
 
-        if self.__mod_context.module_license != "":
-            first = True
-            for line in self.__mod_context.module_license.split("\n"):
-                if first:
-                    self.__write("/* %s\n" % (line))
-                    first = False
-                else:
-                    self.__write(" * %\n" % (line))
-            self.out.write(" */\n")
+        if not self.bare:
 
-        if self.__mod_context.docstring != "": self.__write_docstring(self.__mod_context.docstring)
+            if self.__mod_context.module_license != "":
+                first = True
+                for line in self.__mod_context.module_license.split("\n"):
+                    if first:
+                        self.__write("/* %s\n" % (line))
+                        first = False
+                    else:
+                        self.__write(" * %\n" % (line))
+                self.out.write(" */\n")
 
-        self.__write("(function(%s) {" % self.LIB_NAME)
-        self.__change_buffer(self.BODY_BUFFER)
+            if self.__mod_context.docstring != "": self.__write_docstring(self.__mod_context.docstring)
 
-        for k, v in self.export_map.items():
-            self.__mod_context.declare_variable(k)
-            self.__write("%s = %s.%s;" % (k, self.LIB_NAME, v))
+            self.__write("(function(%s) {" % self.LIB_NAME)
+            self.__change_buffer(self.BODY_BUFFER)
 
-        if self.use_throw_helper:
-            self.get_util_var_name("_throw", "%s.helpers.throw" % self.LIB_NAME)
-            self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
+            for k, v in self.export_map.items():
+                self.__mod_context.declare_variable(k)
+                self.__write("%s = %s.%s;" % (k, self.LIB_NAME, v))
 
-        public_identifiers = self.__mod_context.module_all
-        not_all_exists = public_identifiers is None
-        if not_all_exists:
-            public_identifiers = []
+            if self.use_throw_helper:
+                self.get_util_var_name("_throw", "%s.helpers.throw" % self.LIB_NAME)
+                self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
+
+            public_identifiers = self.__mod_context.module_all
+            not_all_exists = public_identifiers is None
+            if not_all_exists:
+                public_identifiers = []
 
         for stmt in mod.body:
             if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and\
@@ -201,7 +204,7 @@ class Translator(ast.NodeVisitor):
             if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
                 continue # Module docstring
 
-            if not_all_exists:
+            if not self.bare and not_all_exists:
                 name = None
                 if isinstance(stmt, ast.ClassDef) or isinstance(stmt, ast.FunctionDef):
                     name = stmt.name
@@ -211,47 +214,46 @@ class Translator(ast.NodeVisitor):
                 if name is not None and not name.startswith("_"):
                     public_identifiers.append(name)
 
-
             self.visit(stmt)
             if( not isinstance(stmt, ast.Import) and not isinstance(stmt, ast.ImportFrom) and not isinstance(stmt, ast.Pass)):
                 self.__semicolon(stmt)
 
-        if self.namespace != "":
+        if not self.bare:
             self.public_identifiers.extend(public_identifiers)
 
-        self.__write("%s.exports('%s',{" % (self.LIB_NAME, self.namespace))
-        first = True
-        for id in sorted(set(self.public_identifiers)):
-            if first:
-                first = False
-            else:
-                self.__write(",")
-            name = id if id not in self.translated_names else self.translated_names[id]
-            self.__write("%s: %s" % (id, name))
+            self.__write("%s.exports('%s',{" % (self.LIB_NAME, self.namespace))
+            first = True
+            for id in sorted(set(self.public_identifiers)):
+                if first:
+                    first = False
+                else:
+                    self.__write(",")
+                name = id if id not in self.translated_names else self.translated_names[id]
+                self.__write("%s: %s" % (id, name))
 
-        self.__write("});")
-        self.__write("})(%s);" % self.LIB_NAME)
+            self.__write("});")
+            self.__write("})(%s);" % self.LIB_NAME)
 
-        self.__change_buffer(self.HEADER_BUFFER)
+            self.__change_buffer(self.HEADER_BUFFER)
 
-        builtin_var = None
-        builtins = set(self.__mod_context.all_used_builtins())
-        if len(builtins) > 0:
-            builtin_var = self.__curr_context.generate_variable("__builtin__")
-            for builtin in builtins:
-                self.__curr_context.declare_variable(builtin)
+            builtin_var = None
+            builtins = set(self.__mod_context.all_used_builtins())
+            if len(builtins) > 0:
+                builtin_var = self.__curr_context.generate_variable("__builtin__")
+                for builtin in builtins:
+                    self.__curr_context.declare_variable(builtin)
 
-        self.__write_variables()
+            self.__write_variables()
 
 
-        if len(builtins) > 0:
-            self.__write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
-            for builtin in builtins:
-                self.__write("%s = %s.%s;" %(builtin, builtin_var, builtin))
+            if len(builtins) > 0:
+                self.__write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
+                for builtin in builtins:
+                    self.__write("%s = %s.%s;" %(builtin, builtin_var, builtin))
 
-        for item in self.util_names.values():
-            name, value = item
-            self.__write("%s = %s;" %(name, value))
+            for item in self.util_names.values():
+                name, value = item
+                self.__write("%s = %s;" %(name, value))
 
         self.out.write("".join(self.__mod_context.writer.buffers[self.HEADER_BUFFER]))
         self.out.write("".join(self.__mod_context.writer.buffers[self.BODY_BUFFER]))

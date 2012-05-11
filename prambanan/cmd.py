@@ -3,6 +3,7 @@ import os
 import sys
 import logging
 import argparse
+import jsbeautifier
 import pprint
 from prambanan import ParseError
 
@@ -49,6 +50,12 @@ def construct_parser():
         help='input filenames')
     return parser
 
+class FileBuffer(StringIO):
+    def __init__(self, filename):
+        self.filename = filename
+        StringIO.__init__(self)
+
+
 def process_config(parser, config):
     result = {"__file__": os.path.abspath(config)}
     execfile(config, result)
@@ -82,16 +89,18 @@ def process_file(args, output):
             "output": output,
             }
 
-def process(parser, args, out=None):
+def process(parser, args, out_files, out=None):
     if args.python_config is not None:
         for item in process_config(parser, args.python_config):
             if out is None:
-                out = sys.stdout if item.output is None else open(item.output, 'w')
-            for processed in process(parser, item, out):
+                out = sys.stdout if item.output is None else FileBuffer(item.output)
+                out_files.append(out)
+            for processed in process(parser, item, out_files, out):
                 yield processed
     else:
         if out is None:
-            out = sys.stdout if args.output is None else open(args.output, 'w')
+            out = sys.stdout if args.output is None else FileBuffer(item.output)
+            out_files.append(out)
         for result in process_file(args, out):
             yield result
 
@@ -99,10 +108,11 @@ def process(parser, args, out=None):
 
 def main(argv=sys.argv[1:]):
     parser = construct_parser()
+    out_files = []
     args = parser.parse_args(argv)
 
     try:
-        for config in process(parser, args):
+        for config in process(parser, args, out_files):
             try:
                 translate_files(config)
             except ParseError as e:
@@ -124,7 +134,10 @@ def main(argv=sys.argv[1:]):
                 sys.stderr.write("\n")
                 return 1
     finally:
-        print "ea"
+        for out_file in out_files:
+            if isinstance(out_file, FileBuffer):
+                with open(out_file.filename, "w") as f:
+                    f.write(jsbeautifier.beautify(out_file.getvalue()))
 
 
 if __name__ == "__main__":
