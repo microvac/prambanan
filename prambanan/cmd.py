@@ -93,13 +93,13 @@ def process(parser, args, out_files, out=None):
     if args.python_config is not None:
         for item in process_config(parser, args.python_config):
             if out is None:
-                out = sys.stdout if item.output is None else FileBuffer(item.output)
+                out = FileBuffer(None) if item.output is None else FileBuffer(item.output)
                 out_files.append(out)
             for processed in process(parser, item, out_files, out):
                 yield processed
     else:
         if out is None:
-            out = sys.stdout if args.output is None else FileBuffer(item.output)
+            out = FileBuffer(None)
             out_files.append(out)
         for result in process_file(args, out):
             yield result
@@ -136,8 +136,12 @@ def main(argv=sys.argv[1:]):
     finally:
         for out_file in out_files:
             if isinstance(out_file, FileBuffer):
-                with open(out_file.filename, "w") as f:
-                    f.write(jsbeautifier.beautify(out_file.getvalue()))
+                if out_file.filename is None:
+                    f = sys.stdout
+                else:
+                    f = open(out_file.filename, "w")
+                f.write(jsbeautifier.beautify(out_file.getvalue()))
+                f.close()
 
 
 if __name__ == "__main__":

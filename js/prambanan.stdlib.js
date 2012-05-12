@@ -1,20 +1,20 @@
+var JS, __builtin__, __import__, __log10__, __log2__, __py_file__, _isUndefined, _iter, _m___pyjamas__, _pow, _subscript, _throw, abs, acos, asin, atan, atan2, ceil, cos, degrees, e, enumerate, exp, fabs, float, floor, frexp, fsum, hypot, int, ldexp, log, log10, max, min, pi, pow, radians, sin, sqrt, tan;
+__builtin__ = prambanan.import('__builtin__');
+min = __builtin__.min;
+int = __builtin__.int;
+__import__ = __builtin__.__import__;
+float = __builtin__.float;
+enumerate = __builtin__.enumerate;
+abs = __builtin__.abs;
+max = __builtin__.max;
+_iter = prambanan.helpers.iter;
+_pow = prambanan.helpers.pow;
+_subscript = prambanan.helpers.subscript;
+__py_file__ = 'math.py';
+_isUndefined = prambanan.helpers._.isUndefined;
+_throw = prambanan.helpers.
+throw;
 (function(prambanan) {
-    var JS, __builtin__, __import__, __log10__, __log2__, __py_file__, _isUndefined, _iter, _m___pyjamas__, _pow, _subscript, _throw, abs, acos, asin, atan, atan2, ceil, cos, degrees, e, enumerate, exp, fabs, float, floor, frexp, fsum, hypot, int, ldexp, log, log10, max, min, pi, pow, radians, sin, sqrt, tan;
-    __builtin__ = prambanan.import('__builtin__');
-    min = __builtin__.min;
-    int = __builtin__.int;
-    __import__ = __builtin__.__import__;
-    float = __builtin__.float;
-    enumerate = __builtin__.enumerate;
-    abs = __builtin__.abs;
-    max = __builtin__.max;
-    _iter = prambanan.helpers.iter;
-    _pow = prambanan.helpers.pow;
-    _subscript = prambanan.helpers.subscript;
-    __py_file__ = 'math.py';
-    _isUndefined = prambanan.helpers._.isUndefined;
-    _throw = prambanan.helpers.
-    throw;
     _m___pyjamas__ = __import__('__pyjamas__');
     JS = _m___pyjamas__.JS;
     ceil = function(x) {
@@ -114,6 +114,7 @@
      * Calculate the hypotenuse the safe way, avoiding over- and underflows
      */
     hypot = function(x, y) {
+        var x, y;
         x = abs(x);
         y = abs(y);
         (function(_source) {
@@ -148,24 +149,24 @@
         tan: tan
     });
 })(prambanan);
+var JS, NotImplementedError, TypeError, ValueError, __builtin__, __c__days, __c__months, __import__, __py_file__, _dst, _isUndefined, _m___pyjamas__, _strptime, _subscript, _throw, altzone, asctime, ctime, d, float, gmtime, int, isinstance, len, localtime, math, mktime, object, str, strftime, strptime, struct_time, t_time_struct_time, time, timezone, tzname;
+__builtin__ = prambanan.import('__builtin__');
+object = __builtin__.object;
+int = __builtin__.int;
+__import__ = __builtin__.__import__;
+float = __builtin__.float;
+len = __builtin__.len;
+TypeError = __builtin__.TypeError;
+str = __builtin__.str;
+NotImplementedError = __builtin__.NotImplementedError;
+isinstance = __builtin__.isinstance;
+ValueError = __builtin__.ValueError;
+_throw = prambanan.helpers.
+throw;
+_subscript = prambanan.helpers.subscript;
+__py_file__ = 'time.py';
+_isUndefined = prambanan.helpers._.isUndefined;
 (function(prambanan) {
-    var JS, NotImplementedError, TypeError, ValueError, __builtin__, __c__days, __c__months, __import__, __py_file__, _dst, _isUndefined, _m___pyjamas__, _strptime, _subscript, _throw, altzone, asctime, ctime, d, float, gmtime, int, isinstance, len, localtime, math, mktime, object, str, strftime, strptime, struct_time, t_time_struct_time, time, timezone, tzname;
-    __builtin__ = prambanan.import('__builtin__');
-    object = __builtin__.object;
-    int = __builtin__.int;
-    __import__ = __builtin__.__import__;
-    float = __builtin__.float;
-    len = __builtin__.len;
-    TypeError = __builtin__.TypeError;
-    str = __builtin__.str;
-    NotImplementedError = __builtin__.NotImplementedError;
-    isinstance = __builtin__.isinstance;
-    ValueError = __builtin__.ValueError;
-    _throw = prambanan.helpers.
-    throw;
-    _subscript = prambanan.helpers.subscript;
-    __py_file__ = 'time.py';
-    _isUndefined = prambanan.helpers._.isUndefined;
     _m___pyjamas__ = __import__('__pyjamas__');
     JS = _m___pyjamas__.JS;
     math = __import__('math');
@@ -238,7 +239,7 @@
     });
     gmtime = function(t) {
         if (_isUndefined(t)) t = null;
-        var date, startOfYear, tm, tm_year;
+        var date, startOfYear, t, tm, tm_year;
         if (t === null) {
             t = time();
         }
@@ -258,7 +259,7 @@
     };
     localtime = function(t) {
         if (_isUndefined(t)) t = null;
-        var date, dateOffset, dt, startOfDay, startOfYear, startOfYearOffset, tm, tm_mday, tm_mon, tm_year;
+        var date, dateOffset, dt, startOfDay, startOfYear, startOfYearOffset, t, tm, tm_mday, tm_mon, tm_year;
         if (t === null) {
             t = time();
         }
@@ -306,7 +307,7 @@
     };
     strftime = function(fmt, t) {
         if (_isUndefined(t)) t = null;
-        var date, firstMonday, firstWeek, format, re_pct, remainder, result, startOfYear, tm_hour, tm_mday, tm_min, tm_mon, tm_sec, tm_wday, tm_yday, tm_year, weekNo;
+        var date, firstMonday, firstWeek, format, re_pct, remainder, result, startOfYear, t, tm_hour, tm_mday, tm_min, tm_mon, tm_sec, tm_wday, tm_yday, tm_year, weekNo;
         if (t === null) {
             t = localtime();
         } else {
@@ -449,6 +450,7 @@
     };
     asctime = function(t) {
         if (_isUndefined(t)) t = null;
+        var t;
         if (t === null) {
             t = localtime();
         }
@@ -578,21 +580,21 @@
         tzname: tzname
     });
 })(prambanan);
+var JS, MAXYEAR, MINYEAR, NotImplementedError, TypeError, __Jan_01_0001, __builtin__, __c__days, __c__months, __import__, __py_file__, _isUndefined, _m___pyjamas__, _m_time, _strptime, _subscript, _super, _throw, date, datetime, gmtime, int, isinstance, localtime, object, strftime, t_datetime_date, t_datetime_datetime, t_datetime_time, t_datetime_timedelta, t_datetime_tzinfo, time, timedelta, tzinfo;
+__builtin__ = prambanan.import('__builtin__');
+TypeError = __builtin__.TypeError;
+int = __builtin__.int;
+__import__ = __builtin__.__import__;
+object = __builtin__.object;
+NotImplementedError = __builtin__.NotImplementedError;
+isinstance = __builtin__.isinstance;
+_super = prambanan.helpers.super;
+_throw = prambanan.helpers.
+throw;
+_subscript = prambanan.helpers.subscript;
+__py_file__ = 'datetime.py';
+_isUndefined = prambanan.helpers._.isUndefined;
 (function(prambanan) {
-    var JS, MAXYEAR, MINYEAR, NotImplementedError, TypeError, __Jan_01_0001, __builtin__, __c__days, __c__months, __import__, __py_file__, _isUndefined, _m___pyjamas__, _m_time, _strptime, _subscript, _super, _throw, date, datetime, gmtime, int, isinstance, localtime, object, strftime, t_datetime_date, t_datetime_datetime, t_datetime_time, t_datetime_timedelta, t_datetime_tzinfo, time, timedelta, tzinfo;
-    __builtin__ = prambanan.import('__builtin__');
-    TypeError = __builtin__.TypeError;
-    int = __builtin__.int;
-    __import__ = __builtin__.__import__;
-    object = __builtin__.object;
-    NotImplementedError = __builtin__.NotImplementedError;
-    isinstance = __builtin__.isinstance;
-    _super = prambanan.helpers.super;
-    _throw = prambanan.helpers.
-    throw;
-    _subscript = prambanan.helpers.subscript;
-    __py_file__ = 'datetime.py';
-    _isUndefined = prambanan.helpers._.isUndefined;
     _m___pyjamas__ = __import__('__pyjamas__');
     JS = _m___pyjamas__.JS;
     _m_time = __import__('time');
@@ -613,6 +615,7 @@
         constructor: t_datetime_date,
         __init__: function(year, month, day, d) {
             if (_isUndefined(d)) d = null;
+            var d;
             if (d === null) {
                 d = new Date(year, month - 1, day, 0, 0, 0, 0);
             }
@@ -675,6 +678,7 @@
             if (_isUndefined(year)) year = null;
             if (_isUndefined(month)) month = null;
             if (_isUndefined(day)) day = null;
+            var day, month, year;
             if (year === null) {
                 year = this.year;
             }
@@ -769,6 +773,7 @@
             if (_isUndefined(microsecond)) microsecond = 0;
             if (_isUndefined(tzinfo)) tzinfo = null;
             if (_isUndefined(d)) d = null;
+            var d;
             if (tzinfo !== null) {
                 _throw(new NotImplementedError("tzinfo"), __py_file__, 145);
             }
@@ -799,6 +804,7 @@
             if (_isUndefined(second)) second = null;
             if (_isUndefined(microsecond)) microsecond = null;
             if (_isUndefined(tzinfo)) tzinfo = null;
+            var hour, microsecond, minute, second;
             if (tzinfo !== null) {
                 _throw(new NotImplementedError("tzinfo"), __py_file__, 166);
             }
@@ -842,6 +848,7 @@
             if (_isUndefined(microsecond)) microsecond = 0;
             if (_isUndefined(tzinfo)) tzinfo = null;
             if (_isUndefined(d)) d = null;
+            var d;
             if (d === null) {
                 d = new Date(year, month - 1, day, hour, minute, second, 0.5 + microsecond / 1000.0);
             }
@@ -873,6 +880,7 @@
             if (_isUndefined(second)) second = null;
             if (_isUndefined(microsecond)) microsecond = null;
             if (_isUndefined(tzinfo)) tzinfo = null;
+            var day, hour, microsecond, minute, month, second, year;
             if (tzinfo !== null) {
                 _throw(new NotImplementedError("tzinfo"), __py_file__, 253);
             }

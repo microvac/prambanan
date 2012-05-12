@@ -35,7 +35,8 @@ import inspect
 import sys
 import engine
 from prambanan.context import Context
-from prambanan import ParseError
+from prambanan.scope import Scope
+from prambanan import ParseError, Writer
 
 __all__ = ["translate_files"]
 
@@ -122,9 +123,11 @@ class Translator(ast.NodeVisitor):
 
     LIB_NAME = "prambanan"
 
+    def __init__(self, scope, config):
+        self.__mod_context = scope
 
+        self.writer_stack = []
 
-    def __init__(self, config):
         self.input_name = config["input_name"]
         self.input_lines = config["input_lines"]
         self.out = config["output"]
@@ -139,22 +142,22 @@ class Translator(ast.NodeVisitor):
         self.engine = engine.BackboneEngine()
         self.bare = False;
 
-        self.__mod_context = None
         self.__curr_context = None
         self.__iteratorid = 0
 
-    def output(self):
-        if isinstance(self.out, StringIO):
-            return self.out.getvalue()
-        else:
-            self.out.seek(0)
-            return self.out.read()
-
-    def get_util_var_name(self, name, value):
-        if not name in self.util_names:
-            self.util_names[name] = (self.__mod_context.generate_variable(name), value)
-        varname, value = self.util_names[name]
-        return varname
+        class Executor(object):
+            def __init__(cur):
+                cur.result = ""
+            def __enter__(cur):
+                self.writer_stack.append(self.curr_writer)
+                self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
+                return cur
+            def __exit__(cur, *args):
+                header = "".join(self.curr_writer.buffers[self.HEADER_BUFFER])
+                body = "".join(self.curr_writer.buffers[self.BODY_BUFFER])
+                cur.result = header+body
+                self.curr_writer = self.writer_stack.pop()
+        self.Executor = Executor
 
     def visit_Module(self, mod):
         """
@@ -162,21 +165,16 @@ class Translator(ast.NodeVisitor):
         There is and can be only one Module node.
 
         """
-        # Build context
-        self.__mod_context = Context(self.namespace, mod, self.BUFFER_NAMES);
+        self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
         self.__curr_context = self.__mod_context
 
         if not self.bare:
-
+            self.__change_buffer(self.HEADER_BUFFER)
             if self.__mod_context.module_license != "":
-                first = True
-                for line in self.__mod_context.module_license.split("\n"):
-                    if first:
-                        self.__write("/* %s\n" % (line))
-                        first = False
-                    else:
-                        self.__write(" * %\n" % (line))
-                self.out.write(" */\n")
+                license = self.exe_first_differs(self.__mod_context.module_license.split("\n"),
+                                                first_text="/* %s\n" % (line), rest_text=" * %\n" % (line),
+                                                do_visit=lambda n: self.out.write(" */\n"))
+                self.__write(license)
 
             if self.__mod_context.docstring != "": self.__write_docstring(self.__mod_context.docstring)
 
@@ -221,19 +219,11 @@ class Translator(ast.NodeVisitor):
         if not self.bare:
             self.public_identifiers.extend(public_identifiers)
 
-            self.__write("%s.exports('%s',{" % (self.LIB_NAME, self.namespace))
-            first = True
-            for id in sorted(set(self.public_identifiers)):
-                if first:
-                    first = False
-                else:
-                    self.__write(",")
-                name = id if id not in self.translated_names else self.translated_names[id]
-                self.__write("%s: %s" % (id, name))
+            get_name = lambda name: name if name not in self.translated_names else self.translated_names[name]
+            exported = (self.exe_first_differs(sorted(set(self.public_identifiers)), rest_text=",",
+                do_visit=lambda name: self.__write("%s: %s" % (name, get_name(name)))))
 
-            self.__write("});")
-            self.__write("})(%s);" % self.LIB_NAME)
-
+            self.__write("%s.exports('%s',{%s})(%s);" % (self.LIB_NAME, self.namespace, exported, self.LIB_NAME))
             self.__change_buffer(self.HEADER_BUFFER)
 
             builtin_var = None
@@ -255,8 +245,8 @@ class Translator(ast.NodeVisitor):
                 name, value = item
                 self.__write("%s = %s;" %(name, value))
 
-        self.out.write("".join(self.__mod_context.writer.buffers[self.HEADER_BUFFER]))
-        self.out.write("".join(self.__mod_context.writer.buffers[self.BODY_BUFFER]))
+        self.out.write("".join(self.curr_writer.buffers[self.HEADER_BUFFER]))
+        self.out.write("".join(self.curr_writer.buffers[self.BODY_BUFFER]))
         self.__curr_context = None
 
 
@@ -296,34 +286,6 @@ class Translator(ast.NodeVisitor):
                     varname = importname
             self.__write("%s = __import__('%s');" % (varname, importname))
 
-    def visit_Print(self, p):
-        """
-        Translate print "aa" to print("aa")
-
-        """
-        self.__write("print(")
-
-        first = True
-        for expr in p.values:
-            if first:
-                first = False
-            else:
-                self.__write(", ")
-            self.visit(expr)
-
-        self.__write(")")
-
-    def visit_Num(self, n):
-        self.__write(str(n.n))
-
-    def visit_Str(self, s):
-        """
-        Output a quoted string.
-        Cleverly uses JSON to convert it ;)
-
-        """
-        self.__write(simplejson.dumps(s.s))
-
     def visit_Call(self, c):
         """
         Translates a function/method call or class instantiation.
@@ -347,7 +309,7 @@ class Translator(ast.NodeVisitor):
 
             call_type = "name"
             if self.__curr_context.check_builtin_usage(c.func.id):
-                if c.func.id in Context.BUILTINS_FUNC:
+                if c.func.id in Scope.BUILTINS_FUNC:
                     type = "Function"
                 else:
                     type = "Class"
@@ -451,9 +413,6 @@ class Translator(ast.NodeVisitor):
         else:
             self.__write(n.id)
 
-    def visit_Expr(self, expr):
-        self.visit(expr.value)
-
     def visit_BinOp(self, o):
         """
         Translates a binary operator.
@@ -462,25 +421,11 @@ class Translator(ast.NodeVisitor):
 
         """
         if isinstance(o.left, ast.Str) and isinstance(o.op, ast.Mod):
-            self.visit(o.left)
-            self.__write(".sprintf(")
-            if isinstance(o.right, ast.Tuple):
-                first = True
-                for elt in o.right.elts:
-                    if first:
-                        first = False
-                    else:
-                        self.__write(", ")
-                    self.visit(elt)
-            else:
-                self.visit(o.right)
-            self.__write(")")
+            args = self.exe_first_differs(o.right.elts, rest_text=",") if isinstance(o.right, ast.Tuple) else self.exe_node(o.right)
+            self.__write("%s.sprintf(%s)" % (self.exe_node(o.left), args))
         elif isinstance(o.op, ast.Pow):
-            self.__write("%s(" % self.get_util_var_name("_pow", "%s.helpers.pow" % self.LIB_NAME))
-            self.visit(o.left)
-            self.__write(", ")
-            self.visit(o.right)
-            self.__write(")")
+            pow_helper = self.get_util_var_name("_pow", "%s.helpers.pow" % self.LIB_NAME)
+            self.__write("%s(%s, %s)" % (pow_helper, self.exe_node(o.left), self.exe_node(o.right)))
         else:
             chars, prec, assoc = self.__get_op_cpa(o.op)
             self.visit(o.left)
@@ -537,11 +482,8 @@ class Translator(ast.NodeVisitor):
         elif isinstance(op, ast.In) or isinstance(op, ast.NotIn):
             if isinstance(op, ast.NotIn):
                 self.__write(" !")
-            self.__write(" %s( " % self.get_util_var_name("_in", "%s.helpers.in"%self.LIB_NAME))
-            self.visit(c.left)
-            self.__write(", ")
-            self.visit(expr)
-            self.__write(")")
+            in_helper = self.get_util_var_name("_in", "%s.helpers.in"%self.LIB_NAME)
+            self.__write(" %s(%s, %s) " % (in_helper, self.exe_node(c.left), self.exe_node(expr)))
         else:
             self.__write(" %s " % (self.__get_op(op)))
             prec, assoc = self.__get_expr_pa(expr)
@@ -549,82 +491,30 @@ class Translator(ast.NodeVisitor):
             self.visit(expr)
             if prec > 2: self.__write(")")
 
-    def visit_Global(self, g):
-        """
-        Declares variables as global.
-
-        """
-        pass
-
-    def visit_Lambda(self, l):
-        """
-        Translates a lambda function.
-
-        """
-        self.__write("function (")
-        self.__parse_args(l.args)
-        self.__write(") {return ")
-        self.visit(l.body)
-        self.__write(";}")
-
-    def visit_Yield(self, y):
-        """
-        Translate the yield operator.
-
-        """
-        self.__write("yield ")
-        self.visit(y.value)
-
-    def visit_Return(self, r):
-        """
-        Translate the return statement.
-
-        """
-        if r.value:
-            self.__write("return ")
-            self.visit(r.value)
-        else:
-            self.__write("return")
-
-    def visit_List(self, l):
-        """
-        Translate a list expression.
-
-        """
-        self.__write("[")
-        first = True
-        for expr in l.elts:
-            if first:
-                first = False
-            else:
-                self.__write(", ")
-            self.visit(expr)
-        self.__write("]")
-
     def visit_Dict(self, d):
         """
         Translate a dictionary expression.
 
         """
-        self.__write("{")
-        first = True
-        for i in xrange(len(d.keys)):
-            key, value = d.keys[i], d.values[i]
-            if first:
-                first = False
-            else:
-                self.__write(",")
-            if isinstance(key, ast.Num):
-                self.__write("%d: " % (key.n))
-            elif not isinstance(key, ast.Str):
-                raise ParseError("Only numbers and string literals are allowed in dictionary expressions", key.lineno, key.col_offset)
-            else:
-                if self.IDENTIFIER_RE.match(key.s):
-                    self.__write("%s: " % (key.s))
+        with self.Executor() as items:
+            first = True
+            for i in xrange(len(d.keys)):
+                key, value = d.keys[i], d.values[i]
+                if first:
+                    first = False
                 else:
-                    self.__write("\"%s\": " % (key.s))
-            self.visit(value)
-        self.__write("}")
+                    self.__write(",")
+                if isinstance(key, ast.Num):
+                    self.__write("%d: " % (key.n))
+                elif not isinstance(key, ast.Str):
+                    raise ParseError("Only numbers and string literals are allowed in dictionary expressions", key.lineno, key.col_offset)
+                else:
+                    if self.IDENTIFIER_RE.match(key.s):
+                        self.__write("%s: " % (key.s))
+                    else:
+                        self.__write("\"%s\": " % (key.s))
+                self.visit(value)
+        self.__write("{%s}" % items.result)
 
     def visit_Subscript(self, s):
         """
@@ -635,10 +525,7 @@ class Translator(ast.NodeVisitor):
         #   optimize simple index slice
         if isinstance(s.ctx, ast.Load) or isinstance(s.ctx, ast.Assign) or isinstance(s.ctx, ast.Store) :
             if isinstance(s.slice, ast.Index) and isinstance(s.slice.value, ast.Num) and s.slice.value.n >= 0:
-                self.visit(s.value)
-                self.__write('[')
-                self.visit(s.slice.value)
-                self.__write(']')
+                self.__write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
                 return
 
         func = ""
@@ -678,19 +565,6 @@ class Translator(ast.NodeVisitor):
         else:
             raise ParseError("Subscript slice type '%s' is not supported" % (str(s.slice.__class__.__name__)), s.lineno, s.col_offset)
         self.__write(")")
-
-    def visit_Delete(self, d):
-        """
-        Translate a delete statement.
-
-        """
-        for target in d.targets:
-            if isinstance(target, ast.Subscript):
-                self.visit(target)
-            else:
-                self.__write("delete ")
-                self.visit(target)
-
 
     def visit_Assign(self, a):
         """
@@ -741,15 +615,7 @@ class Translator(ast.NodeVisitor):
                     self.__write(" = ")
 
         if isinstance(a.value, ast.Tuple):
-            self.__write("[")
-            first = True
-            for elt in a.value.elts:
-                if first:
-                    first = False
-                else:
-                    self.__write(", ")
-                self.visit(elt)
-            self.__write("]")
+            self.__write("[%s]" % self.exe_first_differs(a.value.elts, rest_text=","))
         else:
             self.visit(a.value)
         if is_target_tuple:
@@ -770,88 +636,6 @@ class Translator(ast.NodeVisitor):
                 return
         self.__write(" %s= " % (self.__get_op(a.op)))
         self.visit(a.value)
-
-    def visit_Pass(self, p):
-        """
-        Translate the `pass` statement. Places a comment.
-
-        """
-        self.__write("/* pass */")
-
-    def visit_Continue(self, c):
-        """
-        Translate the `continue` statement.
-
-        """
-        self.__write("continue")
-
-    def visit_Break(self, c):
-        """
-        Translate the `break` statement.
-
-        """
-        self.__write("break")
-
-    def visit_Attribute(self, a):
-        """
-        Translate an attribute chain.
-
-        """
-        self.visit(a.value)
-        attr = a.attr
-        self.__write(".%s" % (attr))
-
-    def visit_If(self, i):
-        """
-        Translate an if-block.
-
-        """
-        self.__write("if (")
-        self.visit(i.test)
-        self.__write(") {")
-
-        for stmt in i.body:
-            self.visit(stmt)
-            self.__semicolon(stmt)
-
-        self.__write("}")
-
-        if len(i.orelse) > 0:
-            self.__write("else {")
-            for stmt in i.orelse:
-                self.visit(stmt)
-                self.__semicolon(stmt)
-            self.__write("}")
-
-
-    def visit_IfExp(self, i):
-        """
-        Translate an if-expression.
-
-        """
-        self.visit(i.test)
-        self.__write(" ? ")
-        self.visit(i.body)
-        self.__write(" : ")
-        self.visit(i.orelse)
-
-    def visit_While(self, w):
-        """
-        Translate a while loop.
-
-        """
-        if len(w.orelse) > 0:
-            raise ParseError("`else` branches of the `while` statement are not supported", w.orelse[0].lineno, w.orelse[0].col_offset)
-
-        self.__write("while (")
-        self.visit(w.test)
-        self.__write(") {")
-
-        for stmt in w.body:
-            self.visit(stmt)
-            self.__semicolon(stmt)
-
-        self.__write("}")
 
     def visit_For(self, f):
         """
@@ -889,30 +673,21 @@ class Translator(ast.NodeVisitor):
                 iter_var.append(t)
 
         list_var = self.__curr_context.generate_variable("_list")
-        self.__write("%s = " % list_var)
-        self.visit(f.iter)
-        self.__write(";")
-
-        self.__write("for (%s = 0, %s = %s.length; %s < %s; %s++) {" % (i_var, len_var, list_var, i_var, len_var, i_var))
+        init = ""
 
         if not is_tuple:
-            self.__write("%s = %s[%s];" % (iter_var, list_var, i_var))
+            init = ("%s = %s[%s];" % (iter_var, list_var, i_var))
         else:
             for i in range(0, len(iter_var)):
-                self.__write("%s = %s[%s][%d];" % (iter_var[i], list_var, i_var, i))
+                init = init + ("%s = %s[%s][%d];" % (iter_var[i], list_var, i_var, i))
 
-        for stmt in f.body:
-            self.visit(stmt)
-            self.__semicolon(stmt)
-
+        self.__write("%s = %s;" % (list_var, self.exe_node(f.iter)))
+        self.__write("for (%s = 0, %s = %s.length; %s < %s; %s++) {" % (i_var, len_var, list_var, i_var, len_var, i_var))
+        self.__write(" %s" % init)
+        self.__write(" %s" % self.exe_body(f.body))
         self.__write("}")
-
         if len(f.orelse) > 0:
-            self.__write("if(%s == %s){" % (i_var, len_var))
-            for stmt in f.orelse:
-                self.visit(stmt)
-                self.__semicolon(stmt)
-            self.__write("}")
+            self.__write("if(%s == %s){%s}" % (i_var, len_var, self.exe_body(f.orelse)))
 
         self.__iteratorid -= 1
 
@@ -971,15 +746,10 @@ class Translator(ast.NodeVisitor):
                 self.__write(",")
             self.visit(stmt)
 
-        self.__write("/* static methods */")
-        first = True
-        for stmt in statics:
-            if first:
-                first = False
-            else:
-                self.__write(",")
-            self.visit(stmt)
-        self.__write("})")
+        if len(statics) > 0:
+            self.__write("/* static methods */")
+            self.__write("},{%s}" %self.exe_first_differs(statics, rest_text=","))
+        self.__write(")")
 
         self.__pop_context()
 
@@ -1017,54 +787,16 @@ class Translator(ast.NodeVisitor):
         self.__change_buffer(self.BODY_BUFFER)
         if "JSNoOp" in decorators:
             self.__write("return undefined;")
-        # Parse body
         else:
-            for stmt in f.body:
-                if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
-                    continue # Skip docstring
-                if isinstance(stmt, ast.Global): # The `global` statement is invisible
-                    self.visit(stmt)
-                    continue
-                self.visit(stmt)
-                self.__semicolon(stmt)
+            self.__write(self.exe_body(f.body, True, True))
         self.__write("}")
         self.__pop_context()
 
-    def visit_TryFinally(self, tf):
-        self.__write("try{")
-        for stmt in tf.body:
-            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
-                continue # Skip docstring
-            if isinstance(stmt, ast.Global): # The `global` statement is invisible
-                self.visit(stmt)
-                continue
-            self.visit(stmt)
-            self.__semicolon(stmt)
-        self.__write("}");
-        self.__write("finally{")
-        for stmt in tf.finalbody:
-            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
-                continue # Skip docstring
-            if isinstance(stmt, ast.Global): # The `global` statement is invisible
-                self.visit(stmt)
-                continue
-            self.visit(stmt)
-            self.__semicolon(stmt)
-        self.__write("}");
 
     def visit_TryExcept(self, tf):
-        self.__write("try{")
-        for stmt in tf.body:
-            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
-                continue # Skip docstring
-            if isinstance(stmt, ast.Global): # The `global` statement is invisible
-                self.visit(stmt)
-                continue
-            self.visit(stmt)
-            self.__semicolon(stmt)
-        self.__write("}")
-
         ex_var = self.__curr_context.generate_variable("_ex")
+
+        self.__write("try{ %s }" % self.exe_body(tf.body, True, True))
         self.__write("catch (%s){" % ex_var)
         has_first = False
         has_catch_all = False
@@ -1074,21 +806,12 @@ class Translator(ast.NodeVisitor):
                 if has_first:
                     self.__write("else ")
                 if(isinstance(handler.type, ast.Attribute) or isinstance(handler.type, ast.Name)):
-                    self.__write("if (%s instanceof " %(ex_var))
-                    self.visit(handler.type)
-                    self.__write("){");
+                    self.__write("if (%s instanceof %s){" %(ex_var, self.exe_node(handler.type)))
                 elif(isinstance(handler.type, ast.Tuple)):
-                    self.__write("if (");
-                    firstElt = True
-                    for elt in handler.type.elts:
-                        if firstElt:
-                            firstElt = False
-                        else:
-                            self.__write(" || ")
-                        self.__write("(%s instanceof " %(ex_var))
-                        self.visit(elt)
-                        self.__write(")");
-                    self.__write("{");
+                    self.__write("if (%s){" % self.exe_first_differs(handler.type.elts,
+                        rest_text="||",
+                        do_visit=lambda elt: self.__write("(%s instanceof %s)" % (ex_var, self.exe_node(elt)))
+                    ))
                 has_if = has_first = True
             else:
                 has_catch_all = True
@@ -1098,14 +821,7 @@ class Translator(ast.NodeVisitor):
                 has_first = True
             if handler.name is not None:
                 self.__write("%s = %s;" %(handler.name.id, ex_var))
-            for stmt in handler.body:
-                if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
-                    continue # Skip docstring
-                if isinstance(stmt, ast.Global): # The `global` statement is invisible
-                    self.visit(stmt)
-                    continue
-                self.visit(stmt)
-                self.__semicolon(stmt)
+            self.__write(self.exe_body(handler.body, True, True))
             if has_if:
                 self.__write("}");
         if not has_catch_all:
@@ -1141,65 +857,183 @@ class Translator(ast.NodeVisitor):
         self.__push_context(lc.name)
         self.__change_buffer(self.HEADER_BUFFER)
         self.__write(" (function(){ ")
-
         self.__change_buffer(self.BODY_BUFFER)
 
         i_var = self.__curr_context.generate_variable("_i")
         len_var = self.__curr_context.generate_variable("_len")
         results_var = self.__curr_context.generate_variable("_results")
 
-        self.__write("%s = []; " % results_var)
-
         list_var = self.__curr_context.generate_variable("_list")
-        self.__write("%s = %s(" % (list_var, self.get_util_var_name("_iter", "%s.helpers.iter" %self.LIB_NAME)))
-        self.visit(f.iter)
-        self.__write(");")
+        iter_name = self.get_util_var_name("_iter", "%s.helpers.iter" %self.LIB_NAME);
 
+        self.__write("%s = []; " % results_var)
+        self.__write("%s = %s(%s); " % (list_var, iter_name, self.exe_node(f.iter)))
         self.__write("for (%s = 0, %s = %s.length; %s < %s; %s++) {" % (i_var, len_var, list_var, i_var, len_var, i_var))
         if not is_tuple:
-            self.__write("%s = %s[%s];" % (iter_var, list_var, i_var))
+            self.__write(    "%s = %s[%s];" % (iter_var, list_var, i_var))
         else:
             for i in range(0, len(iter_var)):
                 self.__write("%s = %s[%s][%d];" % (iter_var[i], list_var, i_var, i))
         for _if in f.ifs:
-            self.__write("if (")
-            self.visit(_if)
-            self.__write(") ")
-
-        self.__write("%s.push(" % results_var)
-        self.visit(lc.elt)
-        self.__write(");")
+            self.__write("    if (%s)" % self.exe_node(e_if))
+        self.__write(            "%s.push(%s);" % (results_var, self.exe_node(lc.elt)))
         self.__write("}")
         self.__write("return %s;" % results_var)
         self.__write("})()")
+
         self.__pop_context()
 
 
     def visit_Raise(self, r):
+        type = self.exe_node(r.type)
+
         if self.use_throw_helper:
             throw, how = self.util_names["_throw"]
-            self.__write("%s("% throw)
-        else:
-            self.__write("throw ")
-        self.visit(r.type)
-        if self.use_throw_helper:
             file, how = self.util_names["__py_file__"]
-            self.__write(",%s,%d)" % ( file, r.lineno))
+            self.__write("%s(%s, %s, %d)"% (throw, type, file, r.lineno))
+        else:
+            self.__write("throw %s" % type)
+
+    def visit_Print(self, p):
+        """
+        Translate print "aa" to print("aa")
+
+        """
+        self.__write("print(%s)" % self.exe_first_differs(p.values, rest_text=","))
+
+    def visit_Num(self, n):
+        self.__write(str(n.n))
+
+    def visit_Str(self, s):
+        """
+        Output a quoted string.
+        Cleverly uses JSON to convert it ;)
+
+        """
+        self.__write(simplejson.dumps(s.s))
+
+
+    def visit_Expr(self, expr):
+        self.visit(expr.value)
+
+
+    def visit_Global(self, g):
+        """
+        Declares variables as global.
+
+        """
+        pass
+
+    def visit_Lambda(self, l):
+        """
+        Translates a lambda function.
+
+        """
+        self.__write("function (")
+        self.__parse_args(l.args)
+        self.__write(") {return %s; }" % self.exe_node(l.body))
+
+    def visit_Yield(self, y):
+        """
+        Translate the yield operator.
+
+        """
+        self.__write("yield %s" % self.exe_node(y.value))
+
+    def visit_Return(self, r):
+        """
+        Translate the return statement.
+
+        """
+        if r.value:
+            self.__write("return %s" % self.exe_node(r.value))
+        else:
+            self.__write("return")
+
+    def visit_List(self, l):
+        """
+        Translate a list expression.
+
+        """
+        self.__write("[%s]" % self.exe_first_differs(l.elts, rest_text=","))
+
+    def visit_Delete(self, d):
+        """
+        Translate a delete statement.
+
+        """
+        for target in d.targets:
+            if isinstance(target, ast.Subscript):
+                self.visit(target)
+            else:
+                self.__write("delete %s" % self.exe_node(target))
+
+
+    def visit_Pass(self, p):
+        """
+        Translate the `pass` statement. Places a comment.
+
+        """
+        self.__write("/* pass */")
+
+    def visit_Continue(self, c):
+        """
+        Translate the `continue` statement.
+
+        """
+        self.__write("continue")
+
+    def visit_Break(self, c):
+        """
+        Translate the `break` statement.
+
+        """
+        self.__write("break")
+
+    def visit_Attribute(self, a):
+        """
+        Translate an attribute chain.
+
+        """
+        self.__write("%s.%s" % (self.exe_node(a.value), a.attr))
+
+    def visit_If(self, i):
+        """
+        Translate an if-block.
+
+        """
+        self.__write("if ( %s ) { %s }" % (self.exe_node(i.test), self.exe_body(i.body)))
+        if len(i.orelse) > 0:
+            self.__write("else {%s}" % self.exe_body(i.orelse))
+
+
+    def visit_IfExp(self, i):
+        """
+        Translate an if-expression.
+
+        """
+        self.__write("%s ? %s : %s" % (self.exe_node(i.test), self.exe_node(i.body), self.exe_node(i.orelse)))
+
+    def visit_While(self, w):
+        """
+        Translate a while loop.
+
+        """
+        if len(w.orelse) > 0:
+            raise ParseError("`else` branches of the `while` statement are not supported", w.orelse[0].lineno, w.orelse[0].col_offset)
+
+        self.__write("while (%s){ %s }" % (self.exe_node(w.test), self.exe_body(w.body)))
+
+
+
+    def visit_TryFinally(self, tf):
+        self.__write("try{ %s } finally { %s }" (self.exe_body(tf.body, True, True) % self.exe_body(tf.finalbody, True, True)))
 
     def visit_Assert(self, a):
         pass
 
     def visit_Tuple(self, t):
-        self.__write("[")
-        first = True
-        for elt in t.elts:
-            if first:
-                first = False
-            else:
-                self.__write(", ")
-            self.visit(elt)
-        self.__write("]")
-
+        self.__write("[%s]" % self.exe_first_differs(t.elts, rest_text=","))
 
     def generic_visit(self, node):
         raise ParseError("Could not parse node type '%s'" % str(node.__class__.__name__), node.lineno, node.col_offset)
@@ -1314,15 +1148,10 @@ class Translator(ast.NodeVisitor):
             return (8, True)
 
     def __change_buffer(self, buffer_name):
-        self.__curr_context.writer.change_buffer(buffer_name)
+        self.curr_writer.change_buffer(buffer_name)
 
-    def __write(self, s, node=None, s2=None):
-        self.__curr_context.writer.write(s)
-        if node is not None:
-            self.visit(node)
-        if s2 is not None:
-            self.__curr_context.writer.write(s2)
-
+    def __write(self, s):
+        self.curr_writer.write(s)
 
     def __write_docstring(self, s):
         self.__write("/**\n")
@@ -1352,6 +1181,8 @@ class Translator(ast.NodeVisitor):
                 self.__write(variable)
             self.__write(";")
 
+
+
     def __push_context(self, identifier):
         """
         Walk context up.
@@ -1359,9 +1190,13 @@ class Translator(ast.NodeVisitor):
         """
         old_context = self.__curr_context
         self.__curr_context = self.__curr_context.child(identifier)
-        self.__curr_context.writer.indent_level = old_context.writer.indent_level
         if self.__curr_context is None:
             raise ParseError("Lost context on accessing '%s' from '%s (%s)'" % (identifier, old_context.name, old_context.type))
+
+        self.writer_stack.append(self.curr_writer)
+        old_writer = self.curr_writer
+        self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
+        self.curr_writer.indent_level = old_writer.indent_level
 
     def __pop_context(self):
         """
@@ -1373,10 +1208,12 @@ class Translator(ast.NodeVisitor):
 
         if not is_class:
             self.__write_variables()
-
-        self.__curr_context.parent.writer.buffers[self.BODY_BUFFER].extend(self.__curr_context.writer.buffers[self.HEADER_BUFFER])
-        self.__curr_context.parent.writer.buffers[self.BODY_BUFFER].extend(self.__curr_context.writer.buffers[self.BODY_BUFFER])
         self.__curr_context = self.__curr_context.parent
+
+        old_writer = self.writer_stack.pop()
+        old_writer.buffers[self.BODY_BUFFER].extend(self.curr_writer.buffers[self.HEADER_BUFFER])
+        old_writer.buffers[self.BODY_BUFFER].extend(self.curr_writer.buffers[self.BODY_BUFFER])
+        self.curr_writer = old_writer
 
     def __semicolon(self, stmt, no_newline = False):
         """
@@ -1395,15 +1232,58 @@ class Translator(ast.NodeVisitor):
         for i in xrange(1, len(namespace) - 1):
             self.__write("%s.%s = %s._.isUndefined(%s.%s) ? {} : %s.%s;" % (self.LIB_NAME, namespace[i-1], namespace[0], namespace[i-1], namespace[0], namespace[i-1], namespace[0]))
 
+    def exe_node(self, node):
+        with self.Executor() as exe:
+            self.visit(node)
+        return exe.result
+
+    def exe_body(self, body, skip_docstring=False, skip_global=False):
+        with self.Executor() as exe:
+            for stmt in body:
+                if skip_docstring and isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
+                    continue # Skip docstring
+                if skip_global and isinstance(stmt, ast.Global): # The `global` statement is invisible
+                    self.visit(stmt)
+                    continue
+                self.visit(stmt)
+                self.__semicolon(stmt)
+        return exe.result
+
+    def exe_first_differs(self, body, first_text=None, rest_text=None, do_visit=None):
+        if do_visit is None:
+            do_visit = lambda node: self.visit(node)
+
+        with self.Executor() as exe:
+            first = True
+            for node in body:
+                if first:
+                    first = False
+                    if first_text is not None:
+                        self.__write(first_text)
+                else:
+                    if rest_text is not None:
+                        self.__write(rest_text)
+                do_visit(node)
+
+        return exe.result
+
+    def get_util_var_name(self, name, value):
+        if not name in self.util_names:
+            self.util_names[name] = (self.__mod_context.generate_variable(name), value)
+        varname, value = self.util_names[name]
+        return varname
+
+
 def translate_files(config):
     config["use_throw_helper"] = True
-    moo = Translator(config)
-    tree = None
     try:
         tree = ast.parse(config["input"], config["input_name"])
     except SyntaxError as e:
         raise ParseError(e.msg, e.lineno, e.offset, True)
 
+    context = Context(config["namespace"], tree)
+
+    moo = Translator(context.root_scope, config)
     moo.visit(tree)
 
 
