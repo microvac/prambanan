@@ -19,7 +19,6 @@ class Context(ast.NodeVisitor):
         self.node = node
         self.stack = []
         self.scope = None
-        self.params = []
 
         self.current_scope = None
         self.push_scope("Module", "(Module)")
@@ -50,19 +49,24 @@ class Context(ast.NodeVisitor):
             node.name = self.current_scope.generate_list_comp_id()
 
         if self.current_scope.identifiers.has_key(node.name):
-            old_ctx = self.identifiers[node.name]
+            old_ctx = self.current_scope.identifiers[node.name]
             raise ParseError("%s identifier '%s' at line %d is illegaly overwritten" % (
                 old_ctx.type,
                 node.name,
-                old_ctx.node.lineno),
+                node.lineno),
                 node.lineno,
                 node.col_offset
                 )
 
         if node.__class__.__name__ == "FunctionDef":
+            is_parent_class = self.current_scope.type == "Class"
             self.push_scope("Method" if self.current_scope.type == "Class" else "Function", node.name)
+            first = True
             for arg in node.args.args:
-                self.params.append(arg.id)
+                if not (first and is_parent_class):
+                    self.current_scope.params.append(arg.id)
+                if first:
+                    first=False
         elif node.__class__.__name__ == "ClassDef":
             self.push_scope("Class", node.name)
         elif node.__class__.__name__ == "ListComp":

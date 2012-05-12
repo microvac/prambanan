@@ -7,7 +7,7 @@ import jsbeautifier
 import pprint
 from prambanan import ParseError
 
-from prambanan.translator import translate_files
+from prambanan.translator import translate_file
 
 
 def usage(argv):
@@ -22,6 +22,7 @@ demo_config = {
     "out_filename": "",
     "in_filenames":[],
     "warnings": True,
+    "bare": False
     }
 
 def construct_parser():
@@ -46,6 +47,9 @@ def construct_parser():
     parser.add_argument("--type-warning", dest="type_warning",
         default = False, const=True, type=bool, nargs="?",
         help="warn when not finding type")
+    parser.add_argument("--bare", dest="bare",
+        default = False, const=True, type=bool, nargs="?",
+        help="don't wrap result")
     parser.add_argument('files', metavar='f', type=str, nargs='*',
         help='input filenames')
     return parser
@@ -86,6 +90,7 @@ def process_file(args, output):
             "input": input,
             "warnings": warnings,
             "indent": args.indent,
+            "bare": args.bare,
             "output": output,
             }
 
@@ -114,7 +119,7 @@ def main(argv=sys.argv[1:]):
     try:
         for config in process(parser, args, out_files):
             try:
-                translate_files(config)
+                translate_file(config)
             except ParseError as e:
                 if e.lineno is not None:
                     sys.stderr.write("%-6s  " % "")

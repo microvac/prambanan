@@ -38,7 +38,7 @@ from prambanan.context import Context
 from prambanan.scope import Scope
 from prambanan import ParseError, Writer
 
-__all__ = ["translate_files"]
+__all__ = ["translate_file", "translate_string"]
 
 class Translator(ast.NodeVisitor):
     """
@@ -113,7 +113,7 @@ class Translator(ast.NodeVisitor):
         ]
 
 
-    IDENTIFIER_RE = re.compile("[A-Za-z_$][0-9A-Za-z_$]*")
+    IDENTIFIER_RE = re.compile("^[A-Za-z_$][0-9A-Za-z_$]*$")
 
     HEADER_BUFFER = "header"
     BODY_BUFFER = "body"
@@ -134,13 +134,13 @@ class Translator(ast.NodeVisitor):
         self.namespace = config["namespace"]
         self.__warnings = config["warnings"]
         self.use_throw_helper = "use_throw_helper" in config
+        self.bare = config["bare"]
 
         self.export_map = {}
         self.public_identifiers = []
         self.translated_names = {}
         self.util_names = {}
         self.engine = engine.BackboneEngine()
-        self.bare = False;
 
         self.__curr_context = None
         self.__iteratorid = 0
@@ -170,29 +170,19 @@ class Translator(ast.NodeVisitor):
 
         if not self.bare:
             self.__change_buffer(self.HEADER_BUFFER)
-            if self.__mod_context.module_license != "":
-                license = self.exe_first_differs(self.__mod_context.module_license.split("\n"),
-                                                first_text="/* %s\n" % (line), rest_text=" * %\n" % (line),
-                                                do_visit=lambda n: self.out.write(" */\n"))
-                self.__write(license)
-
             if self.__mod_context.docstring != "": self.__write_docstring(self.__mod_context.docstring)
 
             self.__write("(function(%s) {" % self.LIB_NAME)
             self.__change_buffer(self.BODY_BUFFER)
 
-            for k, v in self.export_map.items():
-                self.__mod_context.declare_variable(k)
-                self.__write("%s = %s.%s;" % (k, self.LIB_NAME, v))
-
-            if self.use_throw_helper:
-                self.get_util_var_name("_throw", "%s.helpers.throw" % self.LIB_NAME)
-                self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
-
             public_identifiers = self.__mod_context.module_all
             not_all_exists = public_identifiers is None
             if not_all_exists:
                 public_identifiers = []
+
+        for k, v in self.export_map.items():
+            self.__mod_context.declare_variable(k)
+            self.__write("%s = %s.%s;" % (k, self.LIB_NAME, v))
 
         for stmt in mod.body:
             if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and\
@@ -223,27 +213,26 @@ class Translator(ast.NodeVisitor):
             exported = (self.exe_first_differs(sorted(set(self.public_identifiers)), rest_text=",",
                 do_visit=lambda name: self.__write("%s: %s" % (name, get_name(name)))))
 
-            self.__write("%s.exports('%s',{%s})(%s);" % (self.LIB_NAME, self.namespace, exported, self.LIB_NAME))
-            self.__change_buffer(self.HEADER_BUFFER)
+            self.__write("%s.exports('%s',{%s});})(%s);" % (self.LIB_NAME, self.namespace, exported, self.LIB_NAME))
 
-            builtin_var = None
-            builtins = set(self.__mod_context.all_used_builtins())
-            if len(builtins) > 0:
-                builtin_var = self.__curr_context.generate_variable("__builtin__")
-                for builtin in builtins:
-                    self.__curr_context.declare_variable(builtin)
+        builtin_var = None
+        builtins = set(self.__mod_context.all_used_builtins())
+        if len(builtins) > 0:
+            builtin_var = self.__curr_context.generate_variable("__builtin__")
+            for builtin in builtins:
+                self.__curr_context.declare_variable(builtin)
 
-            self.__write_variables()
+        self.__change_buffer(self.HEADER_BUFFER)
+        self.__write_variables()
 
+        if len(builtins) > 0:
+            self.__write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
+            for builtin in builtins:
+                self.__write("%s = %s.%s;" %(builtin, builtin_var, builtin))
 
-            if len(builtins) > 0:
-                self.__write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
-                for builtin in builtins:
-                    self.__write("%s = %s.%s;" %(builtin, builtin_var, builtin))
-
-            for item in self.util_names.values():
-                name, value = item
-                self.__write("%s = %s;" %(name, value))
+        for item in self.util_names.values():
+            name, value = item
+            self.__write("%s = %s;" %(name, value))
 
         self.out.write("".join(self.curr_writer.buffers[self.HEADER_BUFFER]))
         self.out.write("".join(self.curr_writer.buffers[self.BODY_BUFFER]))
@@ -386,7 +375,7 @@ class Translator(ast.NodeVisitor):
         if not method_written:
             self.visit(c.func)
         self.__write("(")
-        self.__parse_args(c)
+        self.__parse_call_args(c)
         self.__write(")")
 
     def visit_Name(self, n):
@@ -400,9 +389,7 @@ class Translator(ast.NodeVisitor):
         None -> null
 
         """
-        if self.__curr_context.type == "Method" and n.id == "self":
-            self.__write("this")
-        elif n.id == "True" or n.id == "False":
+        if n.id == "True" or n.id == "False":
             self.__write(n.id.lower())
         elif n.id == "None":
             self.__write("null")
@@ -525,6 +512,11 @@ class Translator(ast.NodeVisitor):
         #   optimize simple index slice
         if isinstance(s.ctx, ast.Load) or isinstance(s.ctx, ast.Assign) or isinstance(s.ctx, ast.Store) :
             if isinstance(s.slice, ast.Index) and isinstance(s.slice.value, ast.Num) and s.slice.value.n >= 0:
+                s.simple = True
+                self.__write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
+                return
+            if isinstance(s.slice, ast.Index) and isinstance(s.slice.value, ast.Str):
+                s.simple = True
                 self.__write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
                 return
 
@@ -534,9 +526,10 @@ class Translator(ast.NodeVisitor):
         elif isinstance(s.ctx, ast.Del):
             func = "del"
         elif isinstance(s.ctx, ast.Assign):
-            func = "assign"
+            raise ParseError("Subscript with context '%s' is not supported" % (str(s.ctx.__class__.__name__)), s.lineno, s.col_offset)
         elif isinstance(s.ctx, ast.Store):
-            func = "assign"
+            func = "store"
+            s.simple = False
         else:
             raise ParseError("Subscript with context '%s' is not supported" % (str(s.ctx.__class__.__name__)), s.lineno, s.col_offset)
 
@@ -564,7 +557,9 @@ class Translator(ast.NodeVisitor):
                 self.__write("null")
         else:
             raise ParseError("Subscript slice type '%s' is not supported" % (str(s.slice.__class__.__name__)), s.lineno, s.col_offset)
-        self.__write(")")
+
+        if not isinstance(s.ctx, ast.Store):
+            self.__write(")")
 
     def visit_Assign(self, a):
         """
@@ -609,16 +604,22 @@ class Translator(ast.NodeVisitor):
                 if is_class and not isinstance(target, ast.Name):
                     raise ParseError("Only simple variable assignments are allowed on class scope", target.lineno, target.col_offset)
                 self.visit(target)
-                if is_class:
-                    self.__write(": ")
+                if isinstance(target, ast.Subscript) and not target.simple:
+                    self.__write(", ")
                 else:
-                    self.__write(" = ")
+                    if is_class:
+                        self.__write(": ")
+                    else:
+                        self.__write(" = ")
 
         if isinstance(a.value, ast.Tuple):
             self.__write("[%s]" % self.exe_first_differs(a.value.elts, rest_text=","))
         else:
             self.visit(a.value)
+
         if is_target_tuple:
+            self.__write(")")
+        if isinstance(target, ast.Subscript) and not target.simple:
             self.__write(")")
 
     def visit_AugAssign(self, a):
@@ -716,20 +717,19 @@ class Translator(ast.NodeVisitor):
             for expr in decorators["Export"]:
                 self.__write("%s.%s = " % (expr.s, c.name))
 
-        if len(c.bases) > 1 :
-            raise ParseError("Could not do multiple inheritance",  c.lineno, c.bases[1].col_offset)
-
         bases = filter(lambda b: not isinstance(b, ast.Name) or b.id != "object", c.bases)
         if len(bases) > 0:
-            self.visit(bases[0])
+            bases_param = "[%s]" % self.exe_first_differs(bases, rest_text=", ")
         else:
-            self.__write("object")
+            bases_param = "[object]"
 
-        self.__write(".extend({constructor: %s" % ctor_name)
+        extend = self.get_util_var_name("_extend", "%s.helpers.extend" %self.LIB_NAME)
+        self.__write("%s(%s, %s,{" % (extend, bases_param, ctor_name))
 
         self.__change_buffer(self.BODY_BUFFER)
         # Base classes
         first_docstring = True
+        first = True
         statics = []
         for stmt in c.body:
             if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
@@ -742,14 +742,15 @@ class Translator(ast.NodeVisitor):
                 if self.__get_decorators(stmt).has_key("staticmethod"):
                     statics.append(stmt)
                     continue
-            if not isinstance(stmt, ast.Pass):
+            if not isinstance(stmt, ast.Pass) and not first:
                 self.__write(",")
+            first = False
             self.visit(stmt)
 
         if len(statics) > 0:
             self.__write("/* static methods */")
-            self.__write("},{%s}" %self.exe_first_differs(statics, rest_text=","))
-        self.__write(")")
+            self.__write("},{%s" %self.exe_first_differs(statics, rest_text=","))
+        self.__write("})")
 
         self.__pop_context()
 
@@ -781,10 +782,17 @@ class Translator(ast.NodeVisitor):
         self.__parse_args(f.args, is_method and not is_static)
         self.__write(") {")
 
-        # Parse defaults
-        self.__parse_defaults(f.args)
-
         self.__change_buffer(self.BODY_BUFFER)
+
+        # Parse defaults
+        self.__parse_defaults(f.args, is_method and not is_static)
+
+
+        if is_method and not is_static:
+            self.__curr_context.declare_variable(f.args.args[0].id)
+            self.__write("%s = this;"%f.args.args[0].id)
+
+
         if "JSNoOp" in decorators:
             self.__write("return undefined;")
         else:
@@ -826,7 +834,12 @@ class Translator(ast.NodeVisitor):
                 self.__write("}");
         if not has_catch_all:
             if has_first:
-                self.__write("else { throw %s;}" % ex_var)
+                if self.use_throw_helper:
+                    throw = self.get_util_var_name("_throw", "%s.helpers.throw" %self.LIB_NAME)
+                    file = self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
+                    self.__write("else { %s(%s, %s, %d); }"% (throw, ex_var, file, tf.lineno))
+                else:
+                    self.__write("else { throw %s }" % ex_var)
         self.__write("}");
 
     def visit_ListComp(self, lc):
@@ -875,7 +888,7 @@ class Translator(ast.NodeVisitor):
             for i in range(0, len(iter_var)):
                 self.__write("%s = %s[%s][%d];" % (iter_var[i], list_var, i_var, i))
         for _if in f.ifs:
-            self.__write("    if (%s)" % self.exe_node(e_if))
+            self.__write("    if (%s)" % self.exe_node(_if))
         self.__write(            "%s.push(%s);" % (results_var, self.exe_node(lc.elt)))
         self.__write("}")
         self.__write("return %s;" % results_var)
@@ -888,8 +901,8 @@ class Translator(ast.NodeVisitor):
         type = self.exe_node(r.type)
 
         if self.use_throw_helper:
-            throw, how = self.util_names["_throw"]
-            file, how = self.util_names["__py_file__"]
+            throw = self.get_util_var_name("_throw", "%s.helpers.throw" %self.LIB_NAME)
+            file = self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
             self.__write("%s(%s, %s, %d)"% (throw, type, file, r.lineno))
         else:
             self.__write("throw %s" % type)
@@ -1027,7 +1040,7 @@ class Translator(ast.NodeVisitor):
 
 
     def visit_TryFinally(self, tf):
-        self.__write("try{ %s } finally { %s }" (self.exe_body(tf.body, True, True) % self.exe_body(tf.finalbody, True, True)))
+        self.__write("try{ %s } finally { %s }" % (self.exe_body(tf.body, True, True),  self.exe_body(tf.finalbody, True, True)))
 
     def visit_Assert(self, a):
         pass
@@ -1037,6 +1050,44 @@ class Translator(ast.NodeVisitor):
 
     def generic_visit(self, node):
         raise ParseError("Could not parse node type '%s'" % str(node.__class__.__name__), node.lineno, node.col_offset)
+
+    def __parse_call_args(self, args):
+        """
+        Translate a list of arguments.
+
+        """
+        first = True
+        for arg in args.args:
+            if first:
+                first = False
+            else:
+                self.__write(", ")
+            self.visit(arg)
+
+        if args.starargs is not None:
+            if first:
+                first = False
+            else:
+                self.__write(", ")
+            self.__write(self.exe_node(args.starargs))
+
+        if args.kwargs is not None:
+            if first:
+                first = False
+            else:
+                self.__write(", ")
+            self.__write(self.exe_node(args.kwargs))
+
+        if len(args.keywords) > 0:
+            #todo has keywords and kwargs
+            if first:
+                first = False
+            else:
+                self.__write(", ")
+            make_kwargs = self.get_util_var_name("_make_kwargs", "%s.helpers.make_kwargs" % self.LIB_NAME)
+            kwargs = self.exe_first_differs(args.keywords, rest_text=",",do_visit=lambda arg: self.__write("%s:%s" % (arg.arg, (self.exe_node(arg.value)))))
+            self.__write("%s({%s})" % (make_kwargs, kwargs))
+
 
     def __parse_args(self, args, strip_first = False):
         """
@@ -1053,33 +1104,49 @@ class Translator(ast.NodeVisitor):
             else:
                 self.__write(", ")
             self.visit(arg)
+
+        if args.vararg is not None:
+            if first:
+                first = False
+            else:
+                self.__write(", ")
+            get_varargs = self.get_util_var_name("_get_varargs", ("%s.helpers.get_varargs" % self.LIB_NAME))
+            index = len(args.args)
+            self.__write(args.vararg)
+
+        if args.kwarg is not None:
+            if first:
+                first = False
+            else:
+                self.__write(", ")
+            self.__write(args.kwarg)
         #if getattr(args, "vararg", None) is not None:
         #    raise ParseError("Variable arguments on function definitions are not supported")
 
-    def __parse_defaults(self, args):
+    def __parse_defaults(self, args, strip_first=False):
         """
         Translate the default arguments list.
-            (a, b) -> (a, b)
-            (a, b=3)-> (a, b)
-                        if(_.isUndefined(b)) a = 3;
-            (a, b=3, *args)-> (a, b)->
-                        if(_.isUndefined(b)) a = 3;
-                        args = Prambanan.varargs(arguments, 2) // 2 is non var args variablej
-            (a, b=3, **kwargs) ->
-                    args = Prambanan.kwargs(arguments, 2)
         """
+        if len(args.defaults) > 0 or args.vararg is not None or args.kwarg is not None:
+            args_name = self.__curr_context.generate_variable("_args")
+            self.__write("%s = arguments;" % args_name)
+
         if len(args.defaults) > 0:
             first = len(args.args) - len(args.defaults)
             for i in xrange(len(args.defaults)):
-                self.__write("if (%s(" % self.get_util_var_name("_isUndefined", ("%s.helpers._.isUndefined" % self.LIB_NAME)))
+                get_arg = self.get_util_var_name("_get_arg", ("%s.helpers.get_arg" % self.LIB_NAME))
+                arg_name = self.exe_node(args.args[first+i])
+                self.__write("%s = %s(%d, \"%s\", %s, %s);" % (arg_name, get_arg, first+i, arg_name, args_name, self.exe_node(args.defaults[i])))
 
-                self.visit(args.args[first+i])
-                self.__write(")) ")
-                self.visit(args.args[first+i])
-                self.__write(" = ")
-                #change to prambanan default args
-                self.visit(args.defaults[i])
-                self.__write(";")
+        if args.vararg is not None:
+            get_varargs = self.get_util_var_name("_get_varargs", ("%s.helpers.get_varargs" % self.LIB_NAME))
+            index = len(args.args)
+            self.__write("%s = %s(%d, %s);" % (args.vararg, get_varargs, index, args_name))
+
+        if args.kwarg is not None:
+            get_kwargs = self.get_util_var_name("_get_kwargs", ("%s.helpers.get_kwargs" % self.LIB_NAME))
+            self.__write("%s = %s(%s);" % (args.kwarg, get_kwargs, args_name))
+
 
     def __get_decorators(self, stmt):
         """
@@ -1154,7 +1221,7 @@ class Translator(ast.NodeVisitor):
         self.curr_writer.write(s)
 
     def __write_docstring(self, s):
-        self.__write("/**\n")
+        self.__write("\n/**\n")
         gotnl = False
         first = True
         for line in s.split("\n"):
@@ -1268,13 +1335,39 @@ class Translator(ast.NodeVisitor):
         return exe.result
 
     def get_util_var_name(self, name, value):
-        if not name in self.util_names:
-            self.util_names[name] = (self.__mod_context.generate_variable(name), value)
-        varname, value = self.util_names[name]
-        return varname
+        if not self.bare:
+            if not name in self.util_names:
+                self.util_names[name] = (self.__mod_context.generate_variable(name), value)
+            varname, value = self.util_names[name]
+            return varname
+        else:
+            return value
 
 
-def translate_files(config):
+def translate_string(input,namespace=""):
+    config = {}
+    output = StringIO()
+    config["bare"] = True
+    config["input_name"] = None
+    config["input_lines"] = [input]
+    config["output"] = StringIO()
+    config["namespace"] = namespace
+    config["use_throw_helper"] = True
+    config["warnings"] = False
+    config["use_throw_helper"] = False
+
+    try:
+        tree = ast.parse(input)
+    except SyntaxError as e:
+        raise ParseError(e.msg, e.lineno, e.offset, True)
+
+    context = Context(config["namespace"], tree)
+
+    moo = Translator(context.root_scope, config)
+    moo.visit(tree)
+    return config["output"].getvalue()
+
+def translate_file(config):
     config["use_throw_helper"] = True
     try:
         tree = ast.parse(config["input"], config["input_name"])

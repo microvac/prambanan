@@ -688,7 +688,7 @@ class Beautifier:
             # function() vs function (), typeof() vs typeof ()
             if self.opts.jslint_happy:
                 self.append(' ')
-        elif self.last_text in self.line_starters or self.last_text == 'catch':
+        elif self.last_last_text != "." and (self.last_text in self.line_starters or self.last_text == 'catch'):
             self.append(' ')
 
         self.append(token_text)
@@ -834,7 +834,7 @@ class Beautifier:
         if self.flags.if_line and self.last_type == 'TK_END_EXPR':
             self.flags.if_line = False
 
-        if token_text in self.line_starters:
+        if self.last_text != "." and token_text in self.line_starters:
             if self.last_text == 'else':
                 prefix = 'SPACE'
             else:
