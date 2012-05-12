@@ -1,5 +1,6 @@
 (function(){
     var prambanan = this.prambanan = {};
+    var slice = Array.prototype.slice;
     /*
      Module import and exports
      */
@@ -87,63 +88,91 @@
      Compiler helpers
      */
     var subscriptFunctions = {
-        load: function(list, type, start, stop, step){
-            var functions = {
-                index: function(list, index){
-                    return index >= 0
-                        ? list[index]
-                        : list[list.length + index]
-                },
-                slice: function(list, start, stop, step){
-                    if(_.isUndefined(step))
-                        return list.slice(start, stop);
-                    //todo: stepping
+        l: {
+            i: function(list, index){
+                return index >= 0
+                    ? list[index]
+                    : list[list.length + index]
+            },
+            s: function(list, start, stop, step){
+                if(step == null){
+                    return list.slice(start, stop);
                 }
-            };
-            return functions[type](list, start, stop, step);
+                else {
+                    var result = [];
+                    if(start == null)
+                        start = 0;
+                    if(stop == null)
+                        stop = list.length;
+                    for(var i = start; i < stop; i+=step){
+                        result.push(list[i])
+                    }
+                    return result;
+                }
+            }
         },
-        del: function(){
-        },
-        assign: function(){
+        d: {
+            i: function(list, index){
+                list.remove(index);
+            },
+            s: function(list, start, stop, step){
+                if(step != null){
+                    throw new Error("delete slice with step not implemented");
+                }
+                list.remove(start, stop);
+            }
         }
     }
 
-    _isinstance= function(obj, cls){
-        var proto = obj.prototype;
-        if (proto == cls)
+    _isSubClass= function(child, parent){
+        if(!_.isFunction(parent))
+            return false;
+        if (child == parent)
             return true;
-        if(obj.__super__ ){
-            if (_isinstance(obj, obj.__super__)){
+        if(child.__super__ ){
+            if (_isSubClass(child.__super__.constructor, parent)){
                 return true;
             }
         }
-        if(proto.__mixins__){
-            for(var i = 0; i < proto.__mixins__; i++){
-                if (_isinstance(obj, proto__mixins__[i])){
+        if(child.__mixins__){
+            for(var i = 0; i < child.__mixins__.length; i++){
+                if (_isSubClass(child.__mixins__[i].constructor, parent)){
                     return true;
                 }
             }
             return false;
         }
+        return false;
+    }
+
+    function KwArgs(items){
+        this.items = items || {};
+    }
+    KwArgs.prototype.get = function(name, dft){
+        if(_.has(this.items, name))
+            return this.items[name];
+        return dft;
+    }
+    KwArgs.prototype.pop = function(name, dft){
+        if(_.has(this.items, name)){
+            var result = this.items[name];
+            delete this.items[name]
+            return result;
+        }
+        return dft;
     }
 
     prambanan.helpers = {
-        subscript: function(contextType, list, methodType, start, stop, step){
-            return subscriptFunctions[contextType](list, methodType, start, stop, step);
-        },
-        iter: function(o){
-            if(_.isArray(o))
-                return o;
-            if(_.isObject(o))
-                return _.keys(o)
-            return o;
-        },
+        subscript: subscriptFunctions,
         pow: Math.pow,
         _:_,
         throw:function(obj, file, lineno){
             obj.file = file;
             obj.lineno = lineno;
             throw obj;
+        },
+        iter: function(obj){
+            return builtins.iter(obj);
         },
         super: function(obj, attr){
             return _.bind((obj.constructor.__super__)[attr], obj)
@@ -156,46 +185,58 @@
                 instance_attrs.constructor = instance_attrs.__init__;
             }
             var result = bases[0].extend(instance_attrs, static_attrs);
-            instance_attrs.constructor = ctor ? ctor : instance_attr.__init__;
-            for (var i = 1; i < bases.length; i++){
-                var current = bases[i];
-                for(var key in current){
-                    result[key] = current[key];
+            var mixins = [];
+            if(bases.length > 1){
+                for (var i = 1; i < bases.length; i++){
+                    var current = bases[i];
+                    for(var key in current){
+                        if(!(_.has(result, key)))
+                            result[key] = current[key];
+                    }
+                    for(var key in current.prototype){
+                        if(!(key in result.__super__))
+                            result.prototype[key] = current.prototype[key];
+                    }
+                    mixins.push(current.prototype);
                 }
-                for(var key in current.prototype){
-                    result.prototype[key] = current[key];
-                }
-                mixins.push(current);
             }
+
             result.__mixins__ = mixins;
+            return result;
         },
         //todo use this
         isinstance : function (obj, cls){
             if (obj instanceof cls)
-            return true;
-            return _isinstance(obj, cls);
+                return true;
+            if (!obj.constructor)
+                return false;
+            return _isSubClass(obj.constructor, cls);
+        },
+        make_kwargs: function(items){
+            return new KwArgs(items);
+        },
+        init_args: function(args){
+            return slice.call(args,0);
         },
         get_arg : function(index, name, args, dft){
             var arg;
             if(index < args.length){
                 arg = args[index];
                 if (! (arg instanceof KwArgs))
-                    return pos_arg;
-                if (arg.contains(name))
-                    return arg.get(name);
-                return dft;
+                    return arg;
+                return arg.pop(name, dft);
             }
 
             arg = args[args.length - 1];
-            if (arg instanceof KwArgs && arg.contains(name))
-                return arg.get(name);
+            if (arg instanceof KwArgs)
+                return arg.pop(name, dft);
             return dft;
         },
         get_varargs: function(index, args){
             var result = [];
             var start = index;
-            var end = args[args.length - 1] instanceof KwArgs ? args.length - 1 : args.length - 2;
-            return arraySlice(arguments, start, end);
+            var end = args[args.length - 1] instanceof KwArgs ? args.length - 1 : args.length;
+            return slice.call(args, start, end);
         },
         get_kwargs:function(args){
             var arg  = args[args.length - 1];
@@ -212,7 +253,14 @@
         bool: function(i) {return !!i;},
         int: Number,
         float: Number,
-        str: String,
+        str: function(o){
+            if (!_.isUndefined(o) && o.__str__){
+                return o.__str__();
+            }
+            if(_.isBoolean(o))
+                return o ? "True" : "False";
+            return String(o);
+        },
         basestring: String,
         unicode: String,
 
@@ -231,9 +279,13 @@
         reverse: function (a) {
             return a.reverse();
         },
+        sorted: function(l){
+            return _.sortBy(l, function(i){return i;});
+        },
         enumerate: function(o){
             return _.map(o, function(i, idx){return [idx, i]})
         },
+        set:_.uniq,
 
         zip:_.zip,
         map: function(f, l){
@@ -253,17 +305,34 @@
         xrange:_.range,
 
         print: function(s){
-            if(console && console.log)
-                console.log(s);
+            var _s = builtins.str(s)
+            if (typeof console != "undefined"){
+                console.log(_s);
+                return;
+            }
+            else if (typeof print != "undefined"){
+                print(_s)
+                return;
+            }
         },
 
         isinstance: function(obj, type){
-            return obj instanceof type;
+            return prambanan.helpers.isinstance(obj, type);
         },
         __import__: function(ns){
             return prambanan.import(ns);
         },
         super: function(cls, self){
+        },
+        iter: function(o){
+            if(_.isArray(o))
+                return o;
+            if(o instanceof KwArgs){
+                return _.keys(o.items);
+            }
+            if(_.isObject(o))
+                return _.keys(o)
+            return o;
         },
         None: null
     }
@@ -385,6 +454,14 @@
             append: function (object) {
                 this[this.length] = object;
             },
+            extend: function (list) {
+                this.push.apply(this, list);
+            },
+            remove: function(from, to) {
+                var rest = this.slice((to - 1 || from) + 1 || this.length);
+                this.length = from < 0 ? this.length + from : from;
+                return this.push.apply(this, rest);
+            },
             pop: function (index) {
                 if (_.isUndefined(index))
                     index = this.length-1;
@@ -395,6 +472,16 @@
                 var elt = this[index];
                 this.splice(index, 1);
                 return elt;
+            },
+            __str__: function(){
+                var result = "[";
+                for (var i = 0; i < this.length; i++){
+                    if (i != 0)
+                        result+=", ";
+                    result += builtins.str(this[i]);
+                }
+                result += "]";
+                return result;
             }
         });
         prambanan.patch(name);

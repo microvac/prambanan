@@ -124,7 +124,8 @@ class Translator(ast.NodeVisitor):
     LIB_NAME = "prambanan"
 
     def __init__(self, scope, config):
-        self.__mod_context = scope
+        self.mod_scope = scope
+        self.curr_scope = None
 
         self.writer_stack = []
 
@@ -141,9 +142,6 @@ class Translator(ast.NodeVisitor):
         self.translated_names = {}
         self.util_names = {}
         self.engine = engine.BackboneEngine()
-
-        self.__curr_context = None
-        self.__iteratorid = 0
 
         class Executor(object):
             def __init__(cur):
@@ -166,22 +164,22 @@ class Translator(ast.NodeVisitor):
 
         """
         self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
-        self.__curr_context = self.__mod_context
+        self.curr_scope = self.mod_scope
 
         if not self.bare:
             self.__change_buffer(self.HEADER_BUFFER)
-            if self.__mod_context.docstring != "": self.__write_docstring(self.__mod_context.docstring)
+            if self.mod_scope.docstring != "": self.__write_docstring(self.mod_scope.docstring)
 
             self.__write("(function(%s) {" % self.LIB_NAME)
             self.__change_buffer(self.BODY_BUFFER)
 
-            public_identifiers = self.__mod_context.module_all
+            public_identifiers = self.mod_scope.module_all
             not_all_exists = public_identifiers is None
             if not_all_exists:
                 public_identifiers = []
 
         for k, v in self.export_map.items():
-            self.__mod_context.declare_variable(k)
+            self.mod_scope.declare_variable(k)
             self.__write("%s = %s.%s;" % (k, self.LIB_NAME, v))
 
         for stmt in mod.body:
@@ -216,11 +214,11 @@ class Translator(ast.NodeVisitor):
             self.__write("%s.exports('%s',{%s});})(%s);" % (self.LIB_NAME, self.namespace, exported, self.LIB_NAME))
 
         builtin_var = None
-        builtins = set(self.__mod_context.all_used_builtins())
+        builtins = set(self.mod_scope.all_used_builtins())
         if len(builtins) > 0:
-            builtin_var = self.__curr_context.generate_variable("__builtin__")
+            builtin_var = self.curr_scope.generate_variable("__builtin__")
             for builtin in builtins:
-                self.__curr_context.declare_variable(builtin)
+                self.curr_scope.declare_variable(builtin)
 
         self.__change_buffer(self.HEADER_BUFFER)
         self.__write_variables()
@@ -236,7 +234,7 @@ class Translator(ast.NodeVisitor):
 
         self.out.write("".join(self.curr_writer.buffers[self.HEADER_BUFFER]))
         self.out.write("".join(self.curr_writer.buffers[self.BODY_BUFFER]))
-        self.__curr_context = None
+        self.curr_scope = None
 
 
     def visit_ImportFrom(self, i):
@@ -251,7 +249,7 @@ class Translator(ast.NodeVisitor):
             else:
                 module = self.namespace+"."+module
         modulevarname = module if "." not in module else module[0:module.find(".")]
-        modulevarname = self.__curr_context.generate_variable("_m_"+modulevarname)
+        modulevarname = self.curr_scope.generate_variable("_m_"+modulevarname)
         self.__write("%s = __import__('%s'); " % (modulevarname, module))
         for name in i.names:
             varname = name.asname if name.asname else name.name
@@ -281,7 +279,7 @@ class Translator(ast.NodeVisitor):
         every named arguments became keyword arguments
         """
 
-        cls = self.__curr_context.class_context()
+        cls = self.curr_scope.class_context()
 
         type = None
         name = None
@@ -297,14 +295,14 @@ class Translator(ast.NodeVisitor):
                 return
 
             call_type = "name"
-            if self.__curr_context.check_builtin_usage(c.func.id):
+            if self.curr_scope.check_builtin_usage(c.func.id):
                 if c.func.id in Scope.BUILTINS_FUNC:
                     type = "Function"
                 else:
                     type = "Class"
             else:
                 # Look in current context
-                type = getattr(self.__curr_context.lookup(c.func.id), "type", None)
+                type = getattr(self.curr_scope.lookup(c.func.id), "type", None)
                 name = c.func.id
         elif isinstance(c.func, ast.Attribute):
             call_type = "attr"
@@ -314,7 +312,7 @@ class Translator(ast.NodeVisitor):
                 if c.func.value.func.id == "super":
                     # A super call
                     if (not len(c.func.value.args) == 2):
-                        raise ParseError("Only python 2 simple super supported", c.lineno, c.col_offset)
+                        self.raise_error("Only python 2 simple super supported", c)
                     attrname = c.func.attr
                     self.__write("%s(" % self.get_util_var_name("_super", "%s.helpers.super" % self.LIB_NAME))
                     self.__write("this, '%s')" %  attrname)
@@ -334,14 +332,14 @@ class Translator(ast.NodeVisitor):
                     value = value.value
                 if isinstance(value, ast.Name): # The last value must be a Name
                     name = value.id+name
-                    ctx = self.__curr_context.lookup(value.id)
+                    ctx = self.curr_scope.lookup(value.id)
                     while ctx is not None: # Walk up
                         ctx = ctx.child(attrlst.pop())
                         if ctx is not None and len(attrlst) == 0: # Win
                             type = ctx.type
                             break
                     if type is None:
-                            imports = self.__curr_context.all_imports()
+                            imports = self.curr_scope.all_imports()
                             if value.id in imports:
                                 importname, varname = imports[value.id]
                                 try:
@@ -395,7 +393,7 @@ class Translator(ast.NodeVisitor):
             self.__write("null")
         elif n.id in self.RESERVED_WORDS:
             if not n.id in self.translated_names:
-                self.translated_names[n.id] = self.__mod_context.generate_variable("__keyword_"+n.id)
+                self.translated_names[n.id] = self.mod_scope.generate_variable("__keyword_"+n.id)
             self.__write(self.translated_names[n.id])
         else:
             self.__write(n.id)
@@ -457,7 +455,7 @@ class Translator(ast.NodeVisitor):
 
         """
         if len(c.ops) > 1:
-            raise ParseError("Comparisons with more than one operator are not supported", c.lineno, c.col_offset)
+            self.raise_error("Comparisons with more than one operator are not supported", c)
 
         op, expr = c.ops[0], c.comparators[0]
 
@@ -494,7 +492,7 @@ class Translator(ast.NodeVisitor):
                 if isinstance(key, ast.Num):
                     self.__write("%d: " % (key.n))
                 elif not isinstance(key, ast.Str):
-                    raise ParseError("Only numbers and string literals are allowed in dictionary expressions", key.lineno, key.col_offset)
+                    self.raise_error("Only numbers and string literals are allowed in dictionary expressions", key)
                 else:
                     if self.IDENTIFIER_RE.match(key.s):
                         self.__write("%s: " % (key.s))
@@ -522,41 +520,30 @@ class Translator(ast.NodeVisitor):
 
         func = ""
         if isinstance(s.ctx, ast.Load):
-            func = "load"
+            func = "l"
         elif isinstance(s.ctx, ast.Del):
-            func = "del"
-        elif isinstance(s.ctx, ast.Assign):
-            raise ParseError("Subscript with context '%s' is not supported" % (str(s.ctx.__class__.__name__)), s.lineno, s.col_offset)
+            func = "d"
         elif isinstance(s.ctx, ast.Store):
-            func = "store"
+            func = "s"
             s.simple = False
         else:
-            raise ParseError("Subscript with context '%s' is not supported" % (str(s.ctx.__class__.__name__)), s.lineno, s.col_offset)
+            self.raise_error("Subscript with context '%s' is not supported" % (str(s.ctx.__class__.__name__)), s)
 
-        self.__write("%s('%s'," % (self.get_util_var_name("_subscript", ("%s.helpers.subscript" % self.LIB_NAME)), func))
-        self.visit(s.value)
-        self.__write(", ")
-        if isinstance(s.slice, ast.Index):
-            self.__write("'index', ")
-            self.visit(s.slice.value)
-        elif isinstance(s.slice, ast.Slice):
-            self.__write("'slice', ")
-            if s.slice.lower is not None:
-                self.visit(s.slice.lower)
+        subscript = self.get_util_var_name("_subscript", ("%s.helpers.subscript" % self.LIB_NAME))
+        value = self.exe_node(s.value)
+        with self.Executor() as args:
+            if isinstance(s.slice, ast.Index):
+                type='i'
+                self.__write("%s" % ("null" if s.slice.value is None else self.exe_node(s.slice.value)))
+            elif isinstance(s.slice, ast.Slice):
+                type="s"
+                self.__write("%s" % ("null" if s.slice.lower is None else self.exe_node(s.slice.lower)))
+                self.__write(", %s" % ("null" if s.slice.upper is None else self.exe_node(s.slice.upper)))
+                self.__write(", %s" % ("null" if s.slice.step is None else self.exe_node(s.slice.step)))
             else:
-                self.__write("null")
-            self.__write(", ")
-            if s.slice.upper is not None:
-                self.visit(s.slice.upper)
-            else:
-                self.__write("null")
-            self.__write(", ")
-            if s.slice.step is not None:
-                self.visit(s.slice.step)
-            else:
-                self.__write("null")
-        else:
-            raise ParseError("Subscript slice type '%s' is not supported" % (str(s.slice.__class__.__name__)), s.lineno, s.col_offset)
+                self.raise_error("Subscript slice type '%s' is not supported" % (str(s.slice.__class__.__name__)), s)
+
+        self.__write("%s.%s.%s(%s,%s" % (subscript, func, type, value, args.result))
 
         if not isinstance(s.ctx, ast.Store):
             self.__write(")")
@@ -573,10 +560,10 @@ class Translator(ast.NodeVisitor):
                 => c = [a, b]
 
         """
-        is_class = self.__curr_context.type == "Class"
+        is_class = self.curr_scope.type == "Class"
 
         if len(a.targets) > 1 and is_class:
-            raise ParseError("Cannot handle multiple assignment on class context", a.targets[0].lineno, a.targets[1].col_offset)
+            self.raise_error("Cannot handle multiple assignment on class context", a.targets[0])
 
         is_target_tuple = False
         tuple_target = None
@@ -586,10 +573,10 @@ class Translator(ast.NodeVisitor):
                 tuple_target = target
 
         if is_target_tuple and len(a.targets) > 1:
-            raise ParseError("tuple are not allowed on multiple assignment", tuple_target.lineno, tuple_target.col_offset)
+            self.raise_error("tuple are not allowed on multiple assignment", tuple_target)
 
         if is_target_tuple and is_class:
-            raise ParseError("tuple assignment are not allowed on class scope", tuple_target.lineno, tuple_target.col_offset)
+            self.raise_error("tuple assignment are not allowed on class scope", tuple_target)
 
         if is_target_tuple:
             self.__write("(function(_source){")
@@ -602,7 +589,7 @@ class Translator(ast.NodeVisitor):
         else:
             for target in a.targets:
                 if is_class and not isinstance(target, ast.Name):
-                    raise ParseError("Only simple variable assignments are allowed on class scope", target.lineno, target.col_offset)
+                    self.raise_error("Only simple variable assignments are allowed on class scope", target)
                 self.visit(target)
                 if isinstance(target, ast.Subscript) and not target.simple:
                     self.__write(", ")
@@ -643,26 +630,9 @@ class Translator(ast.NodeVisitor):
         Translate a for loop.
 
         """
-
-        # -- This solution is needed to keep all semantics --
-        #
-        # for (var __iter0_ = new XRange(start, stop, step); __iter0_.hasNext();) {
-        #     var value = __iter0_.next();
-        #
-        # }
-        # delete __iter0_;
-        #
-        # for (var __iter0_ = new _Iterator(expr); __iter0_.hasNext();)) {
-        #     var value = __iter0_.next();
-        #     var key = __iter0_.key();
-        # }
-        # delete __iter0_;
-
-
-        i_var = self.__curr_context.generate_variable("_i")
-        len_var = self.__curr_context.generate_variable("_len")
+        i_var = self.curr_scope.generate_variable("_i")
+        len_var = self.curr_scope.generate_variable("_len")
         is_tuple = False
-        iter_var = None
 
         if isinstance(f.target, ast.Name):
             iter_var = f.target.id
@@ -673,7 +643,7 @@ class Translator(ast.NodeVisitor):
                 t = elt.id
                 iter_var.append(t)
 
-        list_var = self.__curr_context.generate_variable("_list")
+        list_var = self.curr_scope.generate_variable("_list")
         init = ""
 
         if not is_tuple:
@@ -684,38 +654,23 @@ class Translator(ast.NodeVisitor):
 
         self.__write("%s = %s;" % (list_var, self.exe_node(f.iter)))
         self.__write("for (%s = 0, %s = %s.length; %s < %s; %s++) {" % (i_var, len_var, list_var, i_var, len_var, i_var))
-        self.__write(" %s" % init)
-        self.__write(" %s" % self.exe_body(f.body))
+        self.__write("   %s" % init)
+        self.__write("   %s" % self.exe_body(f.body))
         self.__write("}")
         if len(f.orelse) > 0:
             self.__write("if(%s == %s){%s}" % (i_var, len_var, self.exe_body(f.orelse)))
 
-        self.__iteratorid -= 1
 
     def visit_ClassDef(self, c):
         """
-        Translates a Python class into a MooTools class.
+        Translates a Python class into Javascript class
         This inserts a Class context which influences the translation of
         functions and assignments.
 
         """
         fullname = "t__%s_" % c.name if self.namespace == "" else "t_%s_%s" % (self.namespace.replace(".", "_"), c.name)
-        ctor_name = self.__curr_context.generate_variable("%s" % fullname)
+        ctor_name = self.curr_scope.generate_variable("%s" % fullname)
         self.__push_context(c.name)
-
-        self.__change_buffer(self.HEADER_BUFFER)
-
-        # Write docstring
-        if len(self.__curr_context.docstring) > 0:
-            self.__write_docstring(self.__curr_context.docstring)
-
-        self.__write("function %s(){ this.__init__.apply(this, arguments); } " % (ctor_name))
-        self.__write("%s = " % (c.name))
-
-        decorators = self.__get_decorators(c)
-        if decorators.has_key("Export"):
-            for expr in decorators["Export"]:
-                self.__write("%s.%s = " % (expr.s, c.name))
 
         bases = filter(lambda b: not isinstance(b, ast.Name) or b.id != "object", c.bases)
         if len(bases) > 0:
@@ -723,11 +678,22 @@ class Translator(ast.NodeVisitor):
         else:
             bases_param = "[object]"
 
+        self.__change_buffer(self.HEADER_BUFFER)
+
+        # Write docstring
+        if len(self.curr_scope.docstring) > 0:
+            self.__write_docstring(self.curr_scope.docstring)
+
+        # Named constructor function
+        self.__write("function %s(){ this.__init__.apply(this, arguments); } " % (ctor_name))
+
+        # Declaration
         extend = self.get_util_var_name("_extend", "%s.helpers.extend" %self.LIB_NAME)
-        self.__write("%s(%s, %s,{" % (extend, bases_param, ctor_name))
+        self.__write("%s = %s(%s, %s,{" % (c.name, extend, bases_param, ctor_name))
 
         self.__change_buffer(self.BODY_BUFFER)
-        # Base classes
+
+        # Instance member
         first_docstring = True
         first = True
         statics = []
@@ -747,6 +713,7 @@ class Translator(ast.NodeVisitor):
             first = False
             self.visit(stmt)
 
+        # Static member
         if len(statics) > 0:
             self.__write("/* static methods */")
             self.__write("},{%s" %self.exe_first_differs(statics, rest_text=","))
@@ -762,17 +729,21 @@ class Translator(ast.NodeVisitor):
 
         """
         self.__push_context(f.name)
-        self.__change_buffer(self.HEADER_BUFFER)
 
-        is_method = self.__curr_context.type == "Method"
+
+        is_method = self.curr_scope.type == "Method"
 
         # Special decorators
         decorators = self.__get_decorators(f)
         is_static = decorators.has_key("staticmethod")
 
+        self.__change_buffer(self.HEADER_BUFFER)
+
         # Write docstring
-        if len(self.__curr_context.docstring) > 0:
-            self.__write_docstring(self.__curr_context.docstring)
+        if len(self.curr_scope.docstring) > 0:
+            self.__write_docstring(self.curr_scope.docstring)
+
+        # Declaration
         if is_method:
             self.__write("%s: function (" % (f.name))
         else:
@@ -784,25 +755,28 @@ class Translator(ast.NodeVisitor):
 
         self.__change_buffer(self.BODY_BUFFER)
 
-        # Parse defaults
+        # Handle default value, var args, kwargs
         self.__parse_defaults(f.args, is_method and not is_static)
 
 
+        # Write self = this
         if is_method and not is_static:
-            self.__curr_context.declare_variable(f.args.args[0].id)
+            self.curr_scope.declare_variable(f.args.args[0].id)
             self.__write("%s = this;"%f.args.args[0].id)
 
-
+        # Function body
         if "JSNoOp" in decorators:
             self.__write("return undefined;")
         else:
             self.__write(self.exe_body(f.body, True, True))
+
         self.__write("}")
+
         self.__pop_context()
 
 
     def visit_TryExcept(self, tf):
-        ex_var = self.__curr_context.generate_variable("_ex")
+        ex_var = self.curr_scope.generate_variable("_ex")
 
         self.__write("try{ %s }" % self.exe_body(tf.body, True, True))
         self.__write("catch (%s){" % ex_var)
@@ -851,7 +825,7 @@ class Translator(ast.NodeVisitor):
             })();
         """
         if len(lc.generators) > 1:
-            raise ParseError("Could only support one generator now",  lc.generators[1].target.lineno, lc.generators[1].target.col_offset)
+            self.raise_error("Could only support one generator now",  lc.generators[1].target)
 
         f = lc.generators[0]
 
@@ -872,11 +846,11 @@ class Translator(ast.NodeVisitor):
         self.__write(" (function(){ ")
         self.__change_buffer(self.BODY_BUFFER)
 
-        i_var = self.__curr_context.generate_variable("_i")
-        len_var = self.__curr_context.generate_variable("_len")
-        results_var = self.__curr_context.generate_variable("_results")
+        i_var = self.curr_scope.generate_variable("_i")
+        len_var = self.curr_scope.generate_variable("_len")
+        results_var = self.curr_scope.generate_variable("_results")
 
-        list_var = self.__curr_context.generate_variable("_list")
+        list_var = self.curr_scope.generate_variable("_list")
         iter_name = self.get_util_var_name("_iter", "%s.helpers.iter" %self.LIB_NAME);
 
         self.__write("%s = []; " % results_var)
@@ -942,9 +916,9 @@ class Translator(ast.NodeVisitor):
         Translates a lambda function.
 
         """
-        self.__write("function (")
-        self.__parse_args(l.args)
-        self.__write(") {return %s; }" % self.exe_node(l.body))
+        with self.Executor() as args:
+            self.__parse_args(l.args)
+        self.__write("function(%s) {return %s; }" % (args.result, self.exe_node(l.body)))
 
     def visit_Yield(self, y):
         """
@@ -1033,7 +1007,7 @@ class Translator(ast.NodeVisitor):
 
         """
         if len(w.orelse) > 0:
-            raise ParseError("`else` branches of the `while` statement are not supported", w.orelse[0].lineno, w.orelse[0].col_offset)
+            self.raise_error("`else` branches of the `while` statement are not supported", w.orelse[0])
 
         self.__write("while (%s){ %s }" % (self.exe_node(w.test), self.exe_body(w.body)))
 
@@ -1110,8 +1084,6 @@ class Translator(ast.NodeVisitor):
                 first = False
             else:
                 self.__write(", ")
-            get_varargs = self.get_util_var_name("_get_varargs", ("%s.helpers.get_varargs" % self.LIB_NAME))
-            index = len(args.args)
             self.__write(args.vararg)
 
         if args.kwarg is not None:
@@ -1120,16 +1092,15 @@ class Translator(ast.NodeVisitor):
             else:
                 self.__write(", ")
             self.__write(args.kwarg)
-        #if getattr(args, "vararg", None) is not None:
-        #    raise ParseError("Variable arguments on function definitions are not supported")
 
     def __parse_defaults(self, args, strip_first=False):
         """
         Translate the default arguments list.
         """
         if len(args.defaults) > 0 or args.vararg is not None or args.kwarg is not None:
-            args_name = self.__curr_context.generate_variable("_args")
-            self.__write("%s = arguments;" % args_name)
+            args_name = self.curr_scope.generate_variable("_args")
+            init_args = self.get_util_var_name("_init_args", ("%s.helpers.init_args" % self.LIB_NAME))
+            self.__write("%s = %s(arguments);" % (args_name , init_args))
 
         if len(args.defaults) > 0:
             first = len(args.args) - len(args.defaults)
@@ -1163,7 +1134,7 @@ class Translator(ast.NodeVisitor):
                     if dec.id == "JSNoOp":
                         decorators["JSNoOp"] = []
                         continue
-                raise ParseError("This function decorator is not supported. Only @staticmethod is supported for now.", dec.lineno, dec.col_offset)
+                self.raise_error("This function decorator is not supported. Only @staticmethod is supported for now.", dec)
         else:
             for dec in stmt.decorator_list:
                 if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name):
@@ -1176,7 +1147,7 @@ class Translator(ast.NodeVisitor):
                 if isinstance(dec, ast.Name) and dec.id == "Class":
                     decorators["Class"] = []
                     continue
-                raise ParseError("This class decorator is not supported. Only decorators of pycow.decorators are supported",dec.lineno, dec.col_offset)
+                self.raise_error("This class decorator is not supported. Only decorators of pycow.decorators are supported",dec)
         return decorators
 
     def __get_op(self, op):
@@ -1237,9 +1208,9 @@ class Translator(ast.NodeVisitor):
         self.__write(" */\n")
 
     def __write_variables(self):
-        if len(self.__curr_context.variables) > 0:
+        if len(self.curr_scope.variables) > 0:
             first = True
-            for variable in sorted(self.__curr_context.variables):
+            for variable in sorted(self.curr_scope.variables):
                 if first:
                     self.__write("var ")
                     first = False
@@ -1255,9 +1226,9 @@ class Translator(ast.NodeVisitor):
         Walk context up.
 
         """
-        old_context = self.__curr_context
-        self.__curr_context = self.__curr_context.child(identifier)
-        if self.__curr_context is None:
+        old_context = self.curr_scope
+        self.curr_scope = self.curr_scope.child(identifier)
+        if self.curr_scope is None:
             raise ParseError("Lost context on accessing '%s' from '%s (%s)'" % (identifier, old_context.name, old_context.type))
 
         self.writer_stack.append(self.curr_writer)
@@ -1271,11 +1242,11 @@ class Translator(ast.NodeVisitor):
 
         """
         self.__change_buffer(self.HEADER_BUFFER)
-        is_class = self.__curr_context.type == "Class"
+        is_class = self.curr_scope.type == "Class"
 
         if not is_class:
             self.__write_variables()
-        self.__curr_context = self.__curr_context.parent
+        self.curr_scope = self.curr_scope.parent
 
         old_writer = self.writer_stack.pop()
         old_writer.buffers[self.BODY_BUFFER].extend(self.curr_writer.buffers[self.HEADER_BUFFER])
@@ -1290,14 +1261,6 @@ class Translator(ast.NodeVisitor):
         """
         if stmt.__class__.__name__ not in self.NO_SEMICOLON:
             self.__write(";")
-
-    def __build_namespace(self, namespace):
-        namespace = namespace.split(".")
-
-        self.__write("window.%s = %s._.isUndefined(window.%s) ? {} : window.%s;" % (self.LIB_NAME, namespace[0], namespace[0], namespace[0]))
-
-        for i in xrange(1, len(namespace) - 1):
-            self.__write("%s.%s = %s._.isUndefined(%s.%s) ? {} : %s.%s;" % (self.LIB_NAME, namespace[i-1], namespace[0], namespace[i-1], namespace[0], namespace[i-1], namespace[0]))
 
     def exe_node(self, node):
         with self.Executor() as exe:
@@ -1337,11 +1300,14 @@ class Translator(ast.NodeVisitor):
     def get_util_var_name(self, name, value):
         if not self.bare:
             if not name in self.util_names:
-                self.util_names[name] = (self.__mod_context.generate_variable(name), value)
+                self.util_names[name] = (self.mod_scope.generate_variable(name), value)
             varname, value = self.util_names[name]
             return varname
         else:
             return value
+
+    def raise_error(self, message, node):
+        raise ParseError(message, node.lineno, node.col_offset)
 
 
 def translate_string(input,namespace=""):
