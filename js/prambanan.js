@@ -107,6 +107,26 @@
         assign: function(){
         }
     }
+
+    _isinstance= function(obj, cls){
+        var proto = obj.prototype;
+        if (proto == cls)
+            return true;
+        if(obj.__super__ ){
+            if (_isinstance(obj, obj.__super__)){
+                return true;
+            }
+        }
+        if(proto.__mixins__){
+            for(var i = 0; i < proto.__mixins__; i++){
+                if (_isinstance(obj, proto__mixins__[i])){
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     prambanan.helpers = {
         subscript: function(contextType, list, methodType, start, stop, step){
             return subscriptFunctions[contextType](list, methodType, start, stop, step);
@@ -127,8 +147,63 @@
         },
         super: function(obj, attr){
             return _.bind((obj.constructor.__super__)[attr], obj)
+        },
+        extend: function(bases, ctor, instance_attrs, static_attrs){
+            var mixins = [];
+            if (ctor){
+                instance_attrs.constructor = ctor;
+            } else if (instance_attrs.__init__){
+                instance_attrs.constructor = instance_attrs.__init__;
+            }
+            var result = bases[0].extend(instance_attrs, static_attrs);
+            instance_attrs.constructor = ctor ? ctor : instance_attr.__init__;
+            for (var i = 1; i < bases.length; i++){
+                var current = bases[i];
+                for(var key in current){
+                    result[key] = current[key];
+                }
+                for(var key in current.prototype){
+                    result.prototype[key] = current[key];
+                }
+                mixins.push(current);
+            }
+            result.__mixins__ = mixins;
+        },
+        //todo use this
+        isinstance : function (obj, cls){
+            if (obj instanceof cls)
+            return true;
+            return _isinstance(obj, cls);
+        },
+        get_arg : function(index, name, args, dft){
+            var arg;
+            if(index < args.length){
+                arg = args[index];
+                if (! (arg instanceof KwArgs))
+                    return pos_arg;
+                if (arg.contains(name))
+                    return arg.get(name);
+                return dft;
+            }
+
+            arg = args[args.length - 1];
+            if (arg instanceof KwArgs && arg.contains(name))
+                return arg.get(name);
+            return dft;
+        },
+        get_varargs: function(index, args){
+            var result = [];
+            var start = index;
+            var end = args[args.length - 1] instanceof KwArgs ? args.length - 1 : args.length - 2;
+            return arraySlice(arguments, start, end);
+        },
+        get_kwargs:function(args){
+            var arg  = args[args.length - 1];
+            return arg instanceof KwArgs ? arg : new KwArgs();
+
         }
     };
+
 
     /*
      builtins module

@@ -17,7 +17,7 @@ loop:
 function call:
     every named arguments became keyword arguments i.e
     fn(52, action="go") ->
-        fn(52, Prambanan.makekwargs({"action": "go"})
+        fn(52, Prambanan.helpers.make_kwargs({"action": "go"})
 
 callable:
     not supported
@@ -29,7 +29,6 @@ __add__, __sub__ not supported:
 
 tuple variable in class declaration
 multiple assignment in class declaration
-multiple inheritance is not supported
 while else
 list comprehension with more than one generator
 decorators that only supported, @staticmethod, @JS_NoOp
