@@ -191,33 +191,6 @@
             }
             return builtins.type(ctor, bases, instance_attrs, static_attrs);
         },
-        extend: function(bases, ctor, instance_attrs, static_attrs){
-            if (ctor){
-                instance_attrs.constructor = ctor;
-            } else if (instance_attrs.__init__){
-                instance_attrs.constructor = instance_attrs.__init__;
-            }
-            var result = bases[0].extend(instance_attrs, static_attrs);
-            var mixins = [];
-            if(bases.length > 1){
-                for (var i = 1; i < bases.length; i++){
-                    var current = bases[i];
-                    for(var key in current){
-                        if(!(_.has(result, key)))
-                            result[key] = current[key];
-                    }
-                    for(var key in current.prototype){
-                        if(!(key in result.__super__))
-                            result.prototype[key] = current.prototype[key];
-                    }
-                    mixins.push(current.prototype);
-                }
-            }
-
-            result.__mixins__ = mixins;
-            return result;
-        },
-        //todo use this
         isinstance : function (obj, cls){
             if (obj instanceof cls)
                 return true;
@@ -644,7 +617,7 @@
         };
 
         prambanan.registerPrototypePatch(name, String.prototype, {
-            sprintf: function () {
+            __mod__: function () {
                 args = Array.prototype.slice.call(arguments, 0);
                 args.splice(0, 0, this);
                 return sprintfWrapper.init.apply(this, args);
@@ -654,6 +627,13 @@
             },
             endswith: function (s) {
                 return this.slice(this.length-s.length) == s;
+            }
+        });
+        prambanan.patch(name);
+
+        prambanan.registerPrototypePatch(name, Number.prototype, {
+            __mod__: function (value) {
+                return this % value;
             }
         });
         prambanan.patch(name);

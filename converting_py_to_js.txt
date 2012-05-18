@@ -1,0 +1,2 @@
+1. remove all yield with appending to result list
+2. modify callable object

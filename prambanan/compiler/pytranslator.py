@@ -400,9 +400,9 @@ class Translator(ast.NodeVisitor):
         and currently the only spot where tuples are allowed.
 
         """
-        if isinstance(o.left, ast.Str) and isinstance(o.op, ast.Mod):
+        if isinstance(o.op, ast.Mod) and not isinstance(o.left, ast.Num):
             args = self.exe_first_differs(o.right.elts, rest_text=",") if isinstance(o.right, ast.Tuple) else self.exe_node(o.right)
-            self.__write("%s.sprintf(%s)" % (self.exe_node(o.left), args))
+            self.__write("%s.__mod__(%s)" % (self.exe_node(o.left), args))
         elif isinstance(o.op, ast.Pow):
             pow_helper = self.get_util_var_name("_pow", "%s.helpers.pow" % self.LIB_NAME)
             self.__write("%s(%s, %s)" % (pow_helper, self.exe_node(o.left), self.exe_node(o.right)))
@@ -458,7 +458,7 @@ class Translator(ast.NodeVisitor):
             self.visit(c.left)
 
         if isinstance(op, ast.IsNot) and expr.id == "None":
-            self.__write(" !== .null")
+            self.__write(" !== null")
         elif isinstance(op, ast.In) or isinstance(op, ast.NotIn):
             if isinstance(op, ast.NotIn):
                 self.__write(" !")

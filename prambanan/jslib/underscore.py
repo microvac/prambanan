@@ -2,7 +2,7 @@ class Chain(object):
     def __init__(self, val):
         self.val = val
     def __getattribute__(self, name):
-        if(not name in ["val", "value"]):
+        if not name in ["val", "value"]:
             def method(*args):
                 self.val = _.__getattribute__(name)(self.val, *args)
                 return self
@@ -49,4 +49,3 @@ def items(obj):
     return obj.items()
 
 detect = find
-
