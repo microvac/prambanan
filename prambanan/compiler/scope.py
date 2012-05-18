@@ -48,10 +48,10 @@ class Scope(object):
         self.parent = parent
 
         self.generators = {}
-        self.params = []
         self.identifiers = {}
         self.known_types = {}
 
+        self.undeclared_variables = []
         self.variables = [] # Holds declared local variables (filled on second pass)
         self.global_variables = []
         self.imports = {}
@@ -132,21 +132,24 @@ class Scope(object):
         return None
 
     def is_variable_free(self, name):
-        if name in self.variables:
+        if name in self.undeclared_variables or name in self.global_variables or name in self.variables:
             return False
         if self.parent is not None:
             return self.parent.is_variable_free(name)
         return True
 
-    def declare_variable(self, name):
+    def declare_variable(self, name, declared=True):
         """
         Returns False if the variable is already declared and True if not.
 
         """
-        if (not name in self.params) and (not name in self.global_variables) and (not name in self.variables):
-            self.variables.append(name)
+        if (not name in self.undeclared_variables) and (not name in self.global_variables) and (not name in self.variables):
+            if declared:
+                self.variables.append(name)
+            else:
+                self.undeclared_variables.append(name)
 
-    def generate_variable(self, base_name):
+    def generate_variable(self, base_name, declared=True):
         name = None
         while True:
             id = self.get_generator_id(base_name)
@@ -155,7 +158,7 @@ class Scope(object):
             else:
                 name = "%s%d" % (base_name, id)
             if self.is_variable_free(name):
-                self.declare_variable(name)
+                self.declare_variable(name, declared)
                 break
         return name
 

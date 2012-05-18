@@ -153,6 +153,7 @@ class Beautifier:
     def __init__(self, opts = default_options() ):
 
         self.opts = opts
+        self.is_obj = False
         self.blank_state()
 
     def blank_state(self):
@@ -222,6 +223,7 @@ class Beautifier:
                 'TK_START_EXPR': self.handle_start_expr,
                 'TK_END_EXPR': self.handle_end_expr,
                 'TK_START_BLOCK': self.handle_start_block,
+                'TK_START_OBJECT': self.handle_start_object,
                 'TK_END_BLOCK': self.handle_end_block,
                 'TK_WORD': self.handle_word,
                 'TK_SEMICOLON': self.handle_semicolon,
@@ -475,7 +477,10 @@ class Beautifier:
             return c, 'TK_END_EXPR'
 
         if c == '{':
-            return c, 'TK_START_BLOCK'
+            if self.last_text == ")":
+                return c, 'TK_START_BLOCK'
+            else:
+                return c, "TK_START_OBJECT"
 
         if c == '}':
             return c, 'TK_END_BLOCK'
@@ -744,27 +749,36 @@ class Beautifier:
             self.indent()
             self.append(token_text)
 
+    def handle_start_object(self, token_text):
+        self.is_obj = True
+        self.set_mode('OBJECT')
+        self.append(token_text)
+
 
     def handle_end_block(self, token_text):
         self.restore_mode()
-        if self.opts.brace_style == 'expand':
-            if self.last_text != '{':
-                self.append_newline()
-        else:
-            if self.last_type == 'TK_START_BLOCK':
-                if self.just_added_newline:
-                    self.remove_indent()
-                else:
-                    # {}
-                    self.trim_output()
+        if not self.is_obj:
+            if self.opts.brace_style == 'expand':
+                if self.last_text != '{':
+                    self.append_newline()
             else:
-                if self.is_array(self.flags.mode) and self.opts.keep_array_indentation:
-                    self.opts.keep_array_indentation = False
-                    self.append_newline()
-                    self.opts.keep_array_indentation = True
+                if self.flags.previous_mode == 'TK_START_OBJECT':
+                    pass
+                elif self.last_type == 'TK_START_BLOCK':
+                    if self.just_added_newline:
+                        self.remove_indent()
+                    else:
+                        # {}
+                        self.trim_output()
                 else:
-                    self.append_newline()
+                    if self.is_array(self.flags.mode) and self.opts.keep_array_indentation:
+                        self.opts.keep_array_indentation = False
+                        self.append_newline()
+                        self.opts.keep_array_indentation = True
+                    else:
+                        self.append_newline()
 
+        self.is_obj = False
         self.append(token_text)
 
 
@@ -991,7 +1005,6 @@ class Beautifier:
             else:
                 if self.flags.mode == 'OBJECT':
                     self.append(token_text)
-                    self.append_newline()
                 else:
                     # EXPR or DO_BLOCK
                     self.append(token_text)

@@ -92,6 +92,7 @@ class Translator(ast.NodeVisitor):
         "For",
         "TryExcept",
         "TryFinally",
+        "Pass",
         ]
 
     RESERVED_WORDS = [
@@ -190,14 +191,9 @@ class Translator(ast.NodeVisitor):
                 continue # Module docstring
 
             if not self.bare and not_all_exists:
-                name = None
-                if isinstance(stmt, ast.ClassDef) or isinstance(stmt, ast.FunctionDef):
-                    name = stmt.name
-                if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and\
-                   isinstance(stmt.targets[0], ast.Name):
-                   name = stmt.targets[0].id
-                if name is not None and not name.startswith("_"):
-                    public_identifiers.append(name)
+                for name in self.__get_identifiers(stmt):
+                    if name is not None and not name.startswith("_"):
+                        public_identifiers.append(name)
 
             self.visit(stmt)
             if( not isinstance(stmt, ast.Import) and not isinstance(stmt, ast.ImportFrom) and not isinstance(stmt, ast.Pass)):
@@ -552,18 +548,11 @@ class Translator(ast.NodeVisitor):
         Translate an assignment.
         if target is tuple, became self executable function:
             (a, b) = c
-                =>
-                (function(_source){ a = _source[0]; b = _source[1]})(c);
         if value is tuple make array:
             c = (a, b)
                 => c = [a, b]
 
         """
-        is_class = self.curr_scope.type == "Class"
-
-        if len(a.targets) > 1 and is_class:
-            self.raise_error("Cannot handle multiple assignment on class context", a.targets[0])
-
         is_target_tuple = False
         tuple_target = None
         for target in a.targets:
@@ -573,9 +562,6 @@ class Translator(ast.NodeVisitor):
 
         if is_target_tuple and len(a.targets) > 1:
             self.raise_error("tuple are not allowed on multiple assignment", tuple_target)
-
-        if is_target_tuple and is_class:
-            self.raise_error("tuple assignment are not allowed on class scope", tuple_target)
 
         if is_target_tuple:
             self.__write("(function(_source){")
@@ -587,16 +573,11 @@ class Translator(ast.NodeVisitor):
             self.__write("})(")
         else:
             for target in a.targets:
-                if is_class and not isinstance(target, ast.Name):
-                    self.raise_error("Only simple variable assignments are allowed on class scope", target)
                 self.visit(target)
                 if isinstance(target, ast.Subscript) and not target.simple:
                     self.__write(", ")
                 else:
-                    if is_class:
-                        self.__write(": ")
-                    else:
-                        self.__write(" = ")
+                    self.__write(" = ")
 
         if isinstance(a.value, ast.Tuple):
             self.__write("[%s]" % self.exe_first_differs(a.value.elts, rest_text=","))
@@ -668,7 +649,7 @@ class Translator(ast.NodeVisitor):
 
         """
         fullname = "t__%s_" % c.name if self.namespace == "" else "t_%s_%s" % (self.namespace.replace(".", "_"), c.name)
-        ctor_name = self.curr_scope.generate_variable("%s" % fullname)
+        ctor_name = self.curr_scope.generate_variable("%s" % fullname, declared=False)
         self.__push_context(c.name)
 
         bases = filter(lambda b: not isinstance(b, ast.Name) or b.id != "object", c.bases)
@@ -686,16 +667,17 @@ class Translator(ast.NodeVisitor):
         # Named constructor function
         self.__write("function %s(){ this.__init__.apply(this, arguments); } " % (ctor_name))
 
-        # Declaration
-        extend = self.get_util_var_name("_extend", "%s.helpers.extend" %self.LIB_NAME)
-        self.__write("%s = %s(%s, %s,{" % (c.name, extend, bases_param, ctor_name))
+        create_class = self.get_util_var_name("_class", "%s.helpers.class" %self.LIB_NAME)
+        self.__write("%s = %s(%s, %s, function(){" % (c.name, create_class, ctor_name, bases_param))
 
         self.__change_buffer(self.BODY_BUFFER)
 
+
+        exported = []
+        proto_only = []
+        cls_only = []
         # Instance member
         first_docstring = True
-        first = True
-        statics = []
         for stmt in c.body:
             if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
                 if first_docstring:
@@ -703,20 +685,29 @@ class Translator(ast.NodeVisitor):
                 else:
                     self.__write_docstring(stmt.value.s)
                 continue
+            exported.extend(self.__get_identifiers(stmt))
             if isinstance(stmt, ast.FunctionDef):
-                if self.__get_decorators(stmt).has_key("staticmethod"):
-                    statics.append(stmt)
-                    continue
-            if not isinstance(stmt, ast.Pass) and not first:
-                self.__write(",")
-            first = False
-            self.visit(stmt)
+                decorators = self.__get_special_decorators(stmt)
+                if not "staticmethod" in decorators:
+                    proto_only.append(stmt.name)
+                else:
+                    cls_only.append(stmt.name)
 
-        # Static member
-        if len(statics) > 0:
-            self.__write("/* static methods */")
-            self.__write("},{%s" %self.exe_first_differs(statics, rest_text=","))
+            self.visit(stmt)
+            self.__semicolon(stmt);
+
+        all_attrs = set(exported).difference(set(proto_only)).difference(set(cls_only))
+
+        def write_attrs(attrs):
+            content = self.exe_first_differs(attrs, rest_text = ",", do_visit = lambda(x): self.__write("%s:%s" %(x, x)))
+            self.__write("{%s}"% content)
+
+        content = self.exe_first_differs([proto_only, cls_only, all_attrs], rest_text = ",", do_visit = lambda(x): write_attrs(x))
+        self.__write("return [%s]" % content)
+
+
         self.__write("})")
+        self.__write_decorators(c)
 
         self.__pop_context()
 
@@ -733,7 +724,7 @@ class Translator(ast.NodeVisitor):
         is_method = self.curr_scope.type == "Method"
 
         # Special decorators
-        decorators = self.__get_decorators(f)
+        decorators = self.__get_special_decorators(f)
         is_static = decorators.has_key("staticmethod")
 
         self.__change_buffer(self.HEADER_BUFFER)
@@ -743,10 +734,7 @@ class Translator(ast.NodeVisitor):
             self.__write_docstring(self.curr_scope.docstring)
 
         # Declaration
-        if is_method:
-            self.__write("%s: function (" % (f.name))
-        else:
-            self.__write("%s = function (" % (f.name))
+        self.__write("%s = function (" % (f.name))
 
         # Parse arguments
         self.__parse_args(f.args, is_method and not is_static)
@@ -770,6 +758,7 @@ class Translator(ast.NodeVisitor):
             self.__write(self.exe_body(f.body, True, True))
 
         self.__write("}")
+        self.__write_decorators(f)
 
         self.__pop_context()
 
@@ -1024,39 +1013,35 @@ class Translator(ast.NodeVisitor):
     def generic_visit(self, node):
         raise ParseError("Could not parse node type '%s'" % str(node.__class__.__name__), node.lineno, node.col_offset)
 
-    def __parse_call_args(self, args):
+    def __parse_call_args(self, args, comma_first=False):
         """
         Translate a list of arguments.
 
         """
         first = True
         for arg in args.args:
-            if first:
-                first = False
-            else:
+            if (not first) or comma_first:
                 self.__write(", ")
+            first = False
             self.visit(arg)
 
         if args.starargs is not None:
-            if first:
-                first = False
-            else:
+            if (not first) or comma_first:
                 self.__write(", ")
+            first = False
             self.__write(self.exe_node(args.starargs))
 
         if args.kwargs is not None:
-            if first:
-                first = False
-            else:
+            if (not first) or comma_first:
                 self.__write(", ")
+            first = False
             self.__write(self.exe_node(args.kwargs))
 
         if len(args.keywords) > 0:
             #todo has keywords and kwargs
-            if first:
-                first = False
-            else:
+            if (not first) or comma_first:
                 self.__write(", ")
+            first = False
             make_kwargs = self.get_util_var_name("_make_kwargs", "%s.helpers.make_kwargs" % self.LIB_NAME)
             kwargs = self.exe_first_differs(args.keywords, rest_text=",",do_visit=lambda arg: self.__write("%s:%s" % (arg.arg, (self.exe_node(arg.value)))))
             self.__write("%s({%s})" % (make_kwargs, kwargs))
@@ -1118,7 +1103,18 @@ class Translator(ast.NodeVisitor):
             self.__write("%s = %s(%s);" % (args.kwarg, get_kwargs, args_name))
 
 
-    def __get_decorators(self, stmt):
+    def __get_identifiers(self, stmt):
+        names = []
+        if isinstance(stmt, ast.ClassDef) or isinstance(stmt, ast.FunctionDef):
+            names.append(stmt.name)
+        if isinstance(stmt, ast.Assign):
+            for target in stmt.targets:
+                if isinstance(target, ast.Name):
+                    names.append(target.id)
+        return names
+
+
+    def __get_special_decorators(self, stmt):
         """
         Return a dictionary of decorators and their parameters.
 
@@ -1127,27 +1123,32 @@ class Translator(ast.NodeVisitor):
         if isinstance(stmt, ast.FunctionDef):
             for dec in stmt.decorator_list:
                 if isinstance(dec, ast.Name):
-                    if dec.id == "staticmethod":
-                        decorators["staticmethod"] = []
+                    if dec.id in ["staticmethod", "JSNoOp"] :
+                        decorators[dec.id] = []
                         continue
-                    if dec.id == "JSNoOp":
-                        decorators["JSNoOp"] = []
-                        continue
-                self.raise_error("This function decorator is not supported. Only @staticmethod is supported for now.", dec)
-        else:
-            for dec in stmt.decorator_list:
-                if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name):
-                    if dec.func.id == "Implements":
-                        decorators["Implements"] = dec.args
-                        continue
-                    if dec.func.id == "Export":
-                        decorators["Export"] = dec.args
-                        continue
-                if isinstance(dec, ast.Name) and dec.id == "Class":
-                    decorators["Class"] = []
-                    continue
-                self.raise_error("This class decorator is not supported. Only decorators of pycow.decorators are supported",dec)
         return decorators
+
+    def __write_decorators(self, stmt):
+        current = stmt.name
+        for dec in stmt.decorator_list:
+            if isinstance(dec, ast.Name):
+                if dec.id in ["staticmethod", "JSNoOp"] :
+                    continue
+                header = "%s" % dec.id
+            elif isinstance(dec, ast.Call):
+                with self.Executor() as call:
+                    self.visit(dec.func)
+                    self.__write("(")
+                    self.__parse_call_args(dec)
+                    self.__write(")")
+                header = call.result
+            else:
+                self.raise_error("This class decorator is not supported. Only decorators of pycow.decorators are supported",dec)
+            current = "%s(%s)" % (header, current)
+
+        if current != stmt.name:
+            self.__write(";%s = %s" % (stmt.name, current))
+
 
     def __get_op(self, op):
         """
@@ -1241,10 +1242,8 @@ class Translator(ast.NodeVisitor):
 
         """
         self.__change_buffer(self.HEADER_BUFFER)
-        is_class = self.curr_scope.type == "Class"
 
-        if not is_class:
-            self.__write_variables()
+        self.__write_variables()
         self.curr_scope = self.curr_scope.parent
 
         old_writer = self.writer_stack.pop()

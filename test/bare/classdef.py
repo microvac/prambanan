@@ -1,3 +1,5 @@
+import colander
+
 class Anu(object):
     pass
 
@@ -7,7 +9,7 @@ class Anuu(object):
         self.anu = 4
 
 class Anu2(object):
-    lala=3
+    @staticmethod
     def anu(self):
         self.anu = 4
     @staticmethod

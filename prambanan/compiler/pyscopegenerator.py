@@ -57,7 +57,7 @@ class PyScopeGenerator(ast.NodeVisitor):
             first = True
             for arg in node.args.args:
                 if not (first and is_parent_class):
-                    self.current_scope.params.append(arg.id)
+                    self.current_scope.undeclared_variables.append(arg.id)
                 if first:
                     first=False
         elif node.__class__.__name__ == "ClassDef":
@@ -174,14 +174,13 @@ class PyScopeGenerator(ast.NodeVisitor):
                         raise ParseError("Value of `__license__` must be a string",stmt.lineno, stmt.col_offset)
                     self.current_scope.module_license = stmt.value.s
 
-        if not self.current_scope.type == "Class":
-            for target in stmt.targets:
-                if isinstance(target, ast.Name):
-                    self.current_scope.declare_variable(target.id)
-                elif isinstance(target, ast.Tuple):
-                    for elt in target.elts:
-                        if isinstance(elt, ast.Name):
-                            self.current_scope.declare_variable(elt.id)
+        for target in stmt.targets:
+            if isinstance(target, ast.Name):
+                self.current_scope.declare_variable(target.id)
+            elif isinstance(target, ast.Tuple):
+                for elt in target.elts:
+                    if isinstance(elt, ast.Name):
+                        self.current_scope.declare_variable(elt.id)
 
         self.visit(stmt.value)
 

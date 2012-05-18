@@ -1,5 +1,7 @@
 (function(){
     var prambanan = this.prambanan = {};
+    var builtins = {};
+    var helpers = prambanan.helpers = {};
     var slice = Array.prototype.slice;
     /*
      Module import and exports
@@ -162,7 +164,8 @@
         return dft;
     }
 
-    prambanan.helpers = {
+
+    _.extend(helpers, {
         subscript: subscriptFunctions,
         pow: Math.pow,
         _:_,
@@ -177,8 +180,18 @@
         super: function(obj, attr){
             return _.bind((obj.constructor.__super__)[attr], obj)
         },
+        class: function(ctor, bases, fn){
+            var attrs = fn();
+            var instance_attrs = attrs[0];
+            var static_attrs = attrs[1];
+            var all_attrs = attrs[2];
+            for (var prop in all_attrs) {
+                instance_attrs[prop] = all_attrs[prop];
+                static_attrs[prop] = all_attrs[prop];
+            }
+            return builtins.type(ctor, bases, instance_attrs, static_attrs);
+        },
         extend: function(bases, ctor, instance_attrs, static_attrs){
-            var mixins = [];
             if (ctor){
                 instance_attrs.constructor = ctor;
             } else if (instance_attrs.__init__){
@@ -243,13 +256,13 @@
             return arg instanceof KwArgs ? arg : new KwArgs();
 
         }
-    };
+    });
 
 
     /*
      builtins module
      */
-    var builtins = {
+    _.extend(builtins, {
         bool: function(i) {return !!i;},
         int: Number,
         float: Number,
@@ -319,6 +332,35 @@
         isinstance: function(obj, type){
             return prambanan.helpers.isinstance(obj, type);
         },
+        type:  function(ctor, bases, attrs, static_attrs){
+            if (arguments.length == 1)
+                return ctor.constructor;
+
+            if (ctor){
+                attrs.constructor = ctor;
+            } else if (attrs.__init__){
+                attrs.constructor = attrs.__init__;
+            }
+            var result = bases[0].extend(attrs, static_attrs)
+            var mixins = [];
+            if(bases.length > 1){
+                for (var i = 1; i < bases.length; i++){
+                    var current = bases[i];
+                    for(var key in current){
+                        if(!(_.has(result, key)))
+                            result[key] = current[key];
+                    }
+                    for(var key in current.prototype){
+                        if(!(key in result.__super__))
+                            result.prototype[key] = current.prototype[key];
+                    }
+                    mixins.push(current.prototype);
+                }
+            }
+            result.__mixins__ = mixins;
+
+            return result;
+        },
         __import__: function(ns){
             return prambanan.import(ns);
         },
@@ -335,7 +377,7 @@
             return o;
         },
         None: null
-    }
+    });
 
 
     function t_object(){this.__init__.apply(this, arguments)}

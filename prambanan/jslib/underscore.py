@@ -12,46 +12,41 @@ class Chain(object):
         return self.val
 
 
+def chain(obj):
+    return Chain(obj)
 
-class Underscore(object):
-    def __init__(self):
-        self.detect = self.find
+def find(list, it):
+    for o in list:
+        if it(o):
+            return o
+    return None
 
-    def chain(self, obj):
-        return Chain(obj)
+def each(obj, it, context = None):
+    keys = []
+    try:
+        keys = obj.keys()
+    except Exception:
+        for o in obj:
+            it(o)
+        return
 
-    def find(self, list, it):
-        for o in list:
-            if it(o):
-                return o
-        return None
+    for key in keys:
+        it(obj[key])
 
-    def each(self, obj, it, context = None):
-        keys = []
-        try:
-            keys = obj.keys()
-        except Exception:
-            for o in obj:
-                it(o)
-            return
+def map(list, it, context=None):
+    return map(it, list)
 
-        for key in keys:
-            it(obj[key])
+def filter(list, it, context=None):
+    return filter(it, list)
 
-    def map(self, list, it, context=None):
-        return map(it, list)
+def reduce(list, it, memo, context=None):
+    return reduce(it, list, memo)
 
-    def filter(self, list, it, context=None):
-        return filter(it, list)
+def isUndefined(obj):
+    return obj is None
 
-    def reduce(self, list, it, memo, context=None):
-        return reduce(it, list, memo)
+def items(obj):
+    return obj.items()
 
-    def isUndefined(self, obj):
-        return obj is None
+detect = find
 
-
-
-
-
-_ = Underscore()
