@@ -1,28 +1,23 @@
 import ast
 from scope import Scope
-from prambanan import ParseError
+from . import ParseError
 
 
-class Context(ast.NodeVisitor):
+class PyScopeGenerator(ast.NodeVisitor):
     """
-    First-pass context parser. Builds an execution context for type inference
+    First-pass ast visitor. Builds a scope that registers variable, helper for type inference
     and captures docstrings.
 
     """
 
     def __init__(self, namespace, node):
-        """
-        Parse the node as a new context. The parent must be another context
-        object. Only Module, Class, Method and Function nodes are allowed.
-
-        """
         self.node = node
         self.stack = []
         self.scope = None
 
         self.current_scope = None
-        self.push_scope("Module", "(Module)")
-        self.root_scope = self.current_scope
+        self.root_scope = None
+
 
         self.namespace = namespace
 
@@ -45,10 +40,8 @@ class Context(ast.NodeVisitor):
         self.current_scope = self.stack.pop()
 
     def visit_func_or_class(self, node):
-        if isinstance(node, ast.ListComp):
-            node.name = self.current_scope.generate_list_comp_id()
 
-        if self.current_scope.identifiers.has_key(node.name):
+        if self.current_scope is not None and self.current_scope.identifiers.has_key(node.name):
             old_ctx = self.current_scope.identifiers[node.name]
             raise ParseError("%s identifier '%s' at line %d is illegaly overwritten" % (
                 old_ctx.type,
@@ -71,6 +64,10 @@ class Context(ast.NodeVisitor):
             self.push_scope("Class", node.name)
         elif node.__class__.__name__ == "ListComp":
             self.push_scope("ListComp", node.name)
+        elif node.__class__.__name__ == "Module":
+            self.push_scope("Module", node.name)
+            self.root_scope = self.current_scope
+
 
         if self.current_scope.type != "ListComp":
             self.visit_body(node)
@@ -94,26 +91,17 @@ class Context(ast.NodeVisitor):
         self.visit_func_or_class( m)
 
     def visit_ListComp(self, lc):
-        """
-        [expr for item if expr in lists] ->
-            (function(){
-                var _i, _len, _results;
-                _results = []
-            })();
-        """
         for f in lc.generators:
             if isinstance(f, ast.Name):
                 self.current_scope.declare_variable(f.target.id)
             elif isinstance(f, ast.Tuple):
                 for elt in f.target.elts:
                     self.current_scope.declare_variable(elt.id)
+
+        lc.name = self.current_scope.generate_list_comp_id()
         self.visit_func_or_class(lc)
 
     def visit_ImportFrom(self, i):
-        """
-        from module import itema, itemb ->
-            module1 = __import__('module'); itema = module1.itema; itemb = module.itemb;
-        """
         self.current_scope.use_builtin("__import__")
         module = i.module
         if i.level == 1:
@@ -127,12 +115,6 @@ class Context(ast.NodeVisitor):
             self.current_scope.imports[varname] = (module, name.name)
 
     def visit_Import(self, i):
-        """
-        import module -> module = __import__(module)
-        import namespace.module -> namespace = __import__(namespace)
-        import namespace.module as alias -> alias = __import__(namespace.module)
-        """
-        first = True
         self.current_scope.use_builtin("__import__")
         for name in i.names:
             importname = name.name
@@ -147,11 +129,6 @@ class Context(ast.NodeVisitor):
             self.current_scope.imports[importname] =  (importname, None)
 
     def visit_Print(self, p):
-        """
-        Translate print "aa" to print("aa")
-
-        """
-
         self.current_scope.use_builtin("print")
 
     def visit_Call(self, node):

@@ -1,9 +1,10 @@
 import unittest
 import os
 import subprocess
-import jsbeautifier
+
 from StringIO import StringIO
-from prambanan.translator import translate_string, translate_file
+from prambanan.compiler.pytranslator import  translate_file
+from prambanan import jsbeautifier
 
 dir = os.path.dirname(os.path.realpath(__file__))
 rhino_path = os.path.join(dir, "js.jar")

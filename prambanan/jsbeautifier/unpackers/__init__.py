@@ -7,10 +7,10 @@
 
 import pkgutil
 import re
-from jsbeautifier.unpackers import evalbased
+from . import evalbased
 
 # NOTE: AT THE MOMENT, IT IS DEACTIVATED FOR YOUR SECURITY: it runs js!
-BLACKLIST = ['jsbeautifier.unpackers.evalbased']
+BLACKLIST = ['prambanan.jsbeautifier.unpackers.evalbased']
 
 class UnpackingError(Exception):
     """Badly packed source or general error. Argument is a
@@ -30,7 +30,8 @@ def getunpackers():
         if 'tests' not in modname and modname not in BLACKLIST:
             try:
                 module = __import__(modname, fromlist=interface)
-            except ImportError:
+            except ImportError as e:
+                print e
                 raise UnpackingError('Bad unpacker: %s' % modname)
             else:
                 unpackers.append(module)

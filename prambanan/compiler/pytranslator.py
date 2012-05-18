@@ -8,7 +8,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licki\;enses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -33,10 +33,10 @@ import ast, simplejson, re, random
 from StringIO import StringIO
 import inspect
 import sys
-import engine
-from prambanan.context import Context
-from prambanan.scope import Scope
-from prambanan import ParseError, Writer
+
+from .pyscopegenerator import PyScopeGenerator
+from .scope import Scope
+from . import ParseError, Writer
 
 __all__ = ["translate_file", "translate_string"]
 
@@ -141,7 +141,6 @@ class Translator(ast.NodeVisitor):
         self.public_identifiers = []
         self.translated_names = {}
         self.util_names = {}
-        self.engine = engine.BackboneEngine()
 
         class Executor(object):
             def __init__(cur):
@@ -1327,9 +1326,9 @@ def translate_string(input,namespace=""):
     except SyntaxError as e:
         raise ParseError(e.msg, e.lineno, e.offset, True)
 
-    context = Context(config["namespace"], tree)
+    scope_gen = PyScopeGenerator(config["namespace"], tree)
 
-    moo = Translator(context.root_scope, config)
+    moo = Translator(scope_gen.root_scope, config)
     moo.visit(tree)
     return config["output"].getvalue()
 
@@ -1340,9 +1339,9 @@ def translate_file(config):
     except SyntaxError as e:
         raise ParseError(e.msg, e.lineno, e.offset, True)
 
-    context = Context(config["namespace"], tree)
+    scope_gen = PyScopeGenerator(config["namespace"], tree)
 
-    moo = Translator(context.root_scope, config)
+    moo = Translator(scope_gen.root_scope, config)
     moo.visit(tree)
 
 

@@ -1,13 +1,11 @@
 from StringIO import StringIO
 import os
 import sys
-import logging
 import argparse
-import jsbeautifier
-import pprint
-from prambanan import ParseError
 
-from prambanan.translator import translate_file
+from prambanan.jsbeautifier import beautify
+from prambanan.compiler import ParseError
+from prambanan.compiler.pytranslator import translate_file
 
 
 def usage(argv):
@@ -145,7 +143,7 @@ def main(argv=sys.argv[1:]):
                     f = sys.stdout
                 else:
                     f = open(out_file.filename, "w")
-                f.write(jsbeautifier.beautify(out_file.getvalue()))
+                f.write(beautify(out_file.getvalue()))
                 f.close()
 
 
