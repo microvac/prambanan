@@ -20,6 +20,7 @@ setup(name='prambanan',
       install_requires=[
           "simplejson",
           "argparse",
+          "chameleon",
       ],
       entry_points="""
       [console_scripts]

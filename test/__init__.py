@@ -1,1 +1,2 @@
-__author__ = 'h'
+def ea():
+    print "hum"

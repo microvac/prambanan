@@ -1,0 +1,87 @@
+firefox:
+dot
+test.html (line 44)
+Mean execution time was: 0.0011
+test.html (line 36)
+Sum execution time was: 11
+test.html (line 37)
+Result of the method call was: joko hendrawan
+test.html (line 38)
+brace
+test.html (line 47)
+Mean execution time was: 0.0012
+test.html (line 36)
+Sum execution time was: 12
+test.html (line 37)
+Result of the method call was: joko hendrawan
+test.html (line 38)
+gi1
+test.html (line 50)
+Mean execution time was: 0.0355
+test.html (line 36)
+Sum execution time was: 355
+test.html (line 37)
+Result of the method call was: joko hendrawan
+test.html (line 38)
+gi2
+test.html (line 53)
+Mean execution time was: 0.0452
+test.html (line 36)
+Sum execution time was: 452
+test.html (line 37)
+Result of the method call was: joko hendrawan
+test.html (line 38)
+gi1_obj
+test.html (line 56)
+Mean execution time was: 0.0352
+test.html (line 36)
+Sum execution time was: 352
+test.html (line 37)
+Result of the method call was: joko surya
+test.html (line 38)
+gi2_obj
+test.html (line 59)
+Mean execution time was: 0.07
+test.html (line 36)
+Sum execution time was: 700
+test.html (line 37)
+Result of the method call was: joko surya
+test.html (line 38)
+getitem
+test.html (line 62)
+Mean execution time was: 0.0356
+test.html (line 36)
+Sum execution time was: 356
+test.html (line 37)
+Result of the method call was: joko surya
+
+chrome:
+
+dot test.html:44
+Mean execution time was:  0.0003 test.html:36
+Sum execution time was:  3 test.html:37
+Result of the method call was: joko hendrawan test.html:38
+brace test.html:47
+Mean execution time was:  0.0006 test.html:36
+Sum execution time was:  6 test.html:37
+Result of the method call was: joko hendrawan test.html:38
+gi1 test.html:50
+Mean execution time was:  0.0011 test.html:36
+Sum execution time was:  11 test.html:37
+Result of the method call was: joko hendrawan test.html:38
+gi2 test.html:53
+Mean execution time was:  0.0014 test.html:36
+Sum execution time was:  14 test.html:37
+Result of the method call was: joko hendrawan test.html:38
+gi1_obj test.html:56
+Mean execution time was:  0.0019 test.html:36
+Sum execution time was:  19 test.html:37
+Result of the method call was: joko surya test.html:38
+gi2_obj test.html:59
+Mean execution time was:  0.0016 test.html:36
+Sum execution time was:  16 test.html:37
+Result of the method call was: joko surya test.html:38
+getitem test.html:62
+Mean execution time was:  0.0007 test.html:36
+Sum execution time was:  7 test.html:37
+Result of the method call was: joko surya

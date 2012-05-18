@@ -1,0 +1,54 @@
+conclusion: go func!
+
+firefox:
+dict
+test.html (line 44)
+Mean execution time was: 0.039
+test.html (line 36)
+Sum execution time was: 390
+test.html (line 37)
+Result of the method call was: undefined
+test.html (line 38)
+func
+test.html (line 47)
+Mean execution time was: 0.0207
+test.html (line 36)
+Sum execution time was: 207
+test.html (line 37)
+Result of the method call was: undefined
+test.html (line 38)
+func
+test.html (line 50)
+Mean execution time was: 0.0203
+test.html (line 36)
+Sum execution time was: 203
+test.html (line 37)
+Result of the method call was: undefined
+test.html (line 38)
+dict
+test.html (line 53)
+Mean execution time was: 0.0297
+test.html (line 36)
+Sum execution time was: 297
+test.html (line 37)
+Result of the method call was: undefined
+
+
+chrome:
+dict test.html:44
+Mean execution time was:  0.0195 test.html:36
+Sum execution time was:  195 test.html:37
+Result of the method call was: undefined test.html:38
+func test.html:47
+Mean execution time was:  0.0179 test.html:36
+Sum execution time was:  179 test.html:37
+Result of the method call was: undefined test.html:38
+func test.html:50
+Mean execution time was:  0.0161 test.html:36
+Sum execution time was:  161 test.html:37
+Result of the method call was: undefined test.html:38
+dict test.html:53
+Mean execution time was:  0.0197 test.html:36
+Sum execution time was:  197 test.html:37
+Result of the method call was: undefined
+

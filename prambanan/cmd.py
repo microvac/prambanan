@@ -24,9 +24,41 @@ demo_config = {
     }
 
 def construct_parser():
+    """
+    job configs:
+        -t/--type: job type: [python|zpt] default: python
+        --bare
+        -d/--output-directory: all result saved on that directory default all saved to stdout
+        -c/--job-config config_file: merge job config in that file to this file
+        --generate-imports: imported modules also generated
+        --watch | watch
+        --clean | clean output -directory
+
+    sub configs:
+        -n/--namespace: target namespace
+        -b/--base-namespace: target base namespace
+        -o/--output: file location relative to job base directory,
+            if not exists but parent module has output dir, result will be concatenated in that file
+
+    """
     parser = argparse.ArgumentParser(
         description="Manage assets.")
 
+    #Job config
+    parser.add_argument("-t", "--type", dest="type",
+        default = "python", type=str,
+        help="job type, python|zpt")
+    parser.add_argument("-d", "--output-directory", dest="output_directory",
+        type=str, default=None,
+        help="output directory, or std output if empty")
+    parser.add_argument("--generate_import", dest="generate_import",
+        default = False, const=True, type=bool, nargs="?",
+        help="also generate imported module")
+    parser.add_argument("--bare", dest="bare",
+        default = False, const=True, type=bool, nargs="?",
+        help="don't wrap result")
+
+    #subconfig
     parser.add_argument("-n", "--namespace", dest="namespace",
         default = None, type=str,
         help="export namespace")
@@ -45,9 +77,6 @@ def construct_parser():
     parser.add_argument("--type-warning", dest="type_warning",
         default = False, const=True, type=bool, nargs="?",
         help="warn when not finding type")
-    parser.add_argument("--bare", dest="bare",
-        default = False, const=True, type=bool, nargs="?",
-        help="don't wrap result")
     parser.add_argument('files', metavar='f', type=str, nargs='*',
         help='input filenames')
     return parser

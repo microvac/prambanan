@@ -1,0 +1,59 @@
+<html>
+    <head>
+        <script type="text/javascript" src="../../../js/lib/underscore.js"></script>
+        <script type="text/javascript" src="../../../js/lib/backbone.js"></script>
+        <script type="text/javascript" src="prambanan.js"></script>
+        <script type="text/javascript" src="test.js"></script>
+        <script type='text/javascript'>
+            var bench = function (method, iterations, args, context) {
+
+                var time = 0;
+                var timer = function (action) {
+                    var d = +(new Date);
+                    if (time < 1 || action === 'start') {
+                        time = d;
+                        return 0;
+                    } else if (action === 'stop') {
+                        var t = d - time;
+                        time = 0;    
+                        return t;
+                    } else {
+                        return d - time;    
+                    }
+                };
+
+                var result = [];
+                var i = 0;
+                timer('start');
+                while (i < iterations) {
+                    result.push(method.apply(context, args));
+                    i++;
+                }
+
+                var execTime = timer('stop');
+
+                if ( typeof console === "object") {
+                    console.log("Mean execution time was: ", execTime / iterations);
+                    console.log("Sum execution time was: ", execTime);
+                    console.log("Result of the method call was:", result[0]);
+                }
+
+                return execTime;  
+            };
+            
+            console.log("dict");
+            bench(test_dict, 10000, [], this);
+
+            console.log("func");
+            bench(test_func, 10000, [], this);
+
+            console.log("func");
+            bench(test_func, 10000, [], this);
+
+            console.log("dict");
+            bench(test_dict, 10000, [], this);
+        </script>
+    </head>
+    <body>
+    </body>
+</html>

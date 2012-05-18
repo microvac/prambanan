@@ -1,0 +1,6 @@
+It's ideal if prambanan:
+    1 supports all python feature
+    2 generate code with small size
+    3 generate fast code
+
+but 1 with 2 and 3 are in conflict, choose not support a python feature if by supporting it make code much bigger / much slower

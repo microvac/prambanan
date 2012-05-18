@@ -16,4 +16,5 @@ pip-log.txt
 
 test/translate/*
 test/sandbox/*
+test/template/*
 test/output/gen/*
