@@ -39,7 +39,6 @@ class Scope(object):
         object. Only Module, Class, Method and Function nodes are allowed.
 
         """
-        self.docstring = ""
         self.module_license = ""
         self.module_all = None
 

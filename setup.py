@@ -21,6 +21,7 @@ setup(name='prambanan',
           "simplejson",
           "argparse",
           "chameleon",
+          "logilab_astng",
       ],
       entry_points="""
       [console_scripts]

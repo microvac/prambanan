@@ -28,8 +28,10 @@
 #
 # No kwargs.
 #
+from logilab.astng import nodes as ast, builder, scoped_nodes
+from logilab.astng.utils import ASTWalker
 
-import ast, simplejson, re, random
+import simplejson, re, random
 from StringIO import StringIO
 import inspect
 import sys
@@ -40,7 +42,7 @@ from . import ParseError, Writer
 
 __all__ = ["translate_file", "translate_string"]
 
-class Translator(ast.NodeVisitor):
+class Translator(ASTWalker):
     """
     Second-pass main parser.
 
@@ -54,35 +56,35 @@ class Translator(ast.NodeVisitor):
 
 """
     OP_MAP = {
-        "Add":	("+", 6, True), # chars, precedence, associates
-        "Sub":	("-", 6, True),
-        "Mult":	("*", 5, True),
-        "Div":	("/", 5, True),
-        "FloorDiv":	("/", 5, True),
-        "Mod":	("%", 5, True),
-        "Pow":	("", 5, True),
+        "+":	("+", 6, True), # chars, precedence, associates
+        "-":	("-", 6, True),
+        "*":	("*", 5, True),
+        "/":	("/", 5, True),
+        #floor div"/":	("/", 5, True),
+        "%":	("%", 5, True),
+        "**":	("", 5, True),
         #"Pow":	?,
-        "LShift":	("<<", 7, True),
-        "RShift":	(">>", 7, True),
-        "BitOr":	("|", 12, True),
-        "BitXor":	("^", 11, True),
-        "BitAnd":	("&", 10, True),
+        "<<":	("<<", 7, True),
+        ">>":	(">>", 7, True),
+        "|":	("|", 12, True),
+        "^":	("^", 11, True),
+        "&":	("&", 10, True),
 
-        "USub":	("-", 4, False),
-        "UAdd": ("+", 4, False),
+        #"uSub":	("-", 4, False),
+        #"UAdd": ("+", 4, False),
 
-        "And":	("&&", 13, True),
-        "Or":	("||", 14, True),
+        "&&":	("&&", 13, True),
+        "||":	("||", 14, True),
 
-        "Not":	("!", 4, False),
+        "not":	("!", 4, False),
 
-        "Eq":	("===", 9, True),
-        "Is":	("===", 9, True),
-        "NotEq":("!==", 9, True),
-        "Lt":	("<", 8, True),
-        "LtE":	("<=", 8, True),
-        "Gt":	(">", 8, True),
-        "GtE":	(">=", 8, True),
+        "==":	("===", 9, True),
+        "is":	("===", 9, True),
+        "!=":("!==", 9, True),
+        "<":	("<", 8, True),
+        "<=":	("<=", 8, True),
+        ">":	(">", 8, True),
+        ">=":	(">=", 8, True),
         }
 
     NO_SEMICOLON = [
@@ -125,6 +127,7 @@ class Translator(ast.NodeVisitor):
     LIB_NAME = "prambanan"
 
     def __init__(self, scope, config):
+        ASTWalker.__init__(self, self)
         self.mod_scope = scope
         self.curr_scope = None
 
@@ -157,7 +160,7 @@ class Translator(ast.NodeVisitor):
                 self.curr_writer = self.writer_stack.pop()
         self.Executor = Executor
 
-    def visit_Module(self, mod):
+    def visit_module(self, mod):
         """
         Initial node.
         There is and can be only one Module node.
@@ -168,7 +171,8 @@ class Translator(ast.NodeVisitor):
 
         if not self.bare:
             self.__change_buffer(self.HEADER_BUFFER)
-            if self.mod_scope.docstring != "": self.__write_docstring(self.mod_scope.docstring)
+            if mod.doc:
+                self.__write_docstring(self.mod_scope.docstring)
 
             self.__write("(function(%s) {" % self.LIB_NAME)
             self.__change_buffer(self.BODY_BUFFER)
@@ -185,10 +189,12 @@ class Translator(ast.NodeVisitor):
         for stmt in mod.body:
             if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and\
                isinstance(stmt.targets[0], ast.Name) and\
-               stmt.targets[0].id in ("__all__", "__license__"):
+               stmt.targets[0].name in ("__all__", "__license__"):
                 continue
+            """
             if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
                 continue # Module docstring
+            """
 
             if not self.bare and not_all_exists:
                 for name in self.__get_identifiers(stmt):
@@ -196,7 +202,7 @@ class Translator(ast.NodeVisitor):
                         public_identifiers.append(name)
 
             self.visit(stmt)
-            if( not isinstance(stmt, ast.Import) and not isinstance(stmt, ast.ImportFrom) and not isinstance(stmt, ast.Pass)):
+            if( not isinstance(stmt, ast.Import) and not isinstance(stmt, ast.From) and not isinstance(stmt, ast.Pass)):
                 self.__semicolon(stmt)
 
         if not self.bare:
@@ -232,7 +238,7 @@ class Translator(ast.NodeVisitor):
         self.curr_scope = None
 
 
-    def visit_ImportFrom(self, i):
+    def visit_from(self, i):
         """
         from module import itema, itemb ->
             module1 = __import__('module'); itema = module1.itema; itemb = module.itemb;
@@ -250,25 +256,25 @@ class Translator(ast.NodeVisitor):
             varname = name.asname if name.asname else name.name
             self.__write("%s = %s.%s;  " % (varname, modulevarname, name.name))
 
-    def visit_Import(self, i):
+    def visit_import(self, i):
         """
         import module -> module = __import__(module)
         import namespace.module -> namespace = __import__(namespace)
         import namespace.module as alias -> alias = __import__(namespace.module)
         """
         first = True
-        for name in i.names:
-            importname = name.name
-            varname = name.name
-            if name.asname:
-                varname = name.asname
+        for name, asname in i.names:
+            importname = name
+            varname = name
+            if asname:
+                varname = asname
             else:
                 if "." in importname:
                     importname = importname[0:importname.find(".")]
                     varname = importname
             self.__write("%s = __import__('%s');" % (varname, importname))
 
-    def visit_Call(self, c):
+    def visit_callfunc(self, c):
         """
         Translates a function/method call or class instantiation.
         every named arguments became keyword arguments
@@ -281,7 +287,7 @@ class Translator(ast.NodeVisitor):
         call_type = None
         method_written = False
         if isinstance(c.func, ast.Name):
-            if c.func.id == "JS":
+            if c.func.name == "JS":
                 if len(c.args) != 1:
                     raise ParseError("native js only accept one argument", c.lineno, c.col_offset)
                 if not isinstance(c.args[0], ast.Str):
@@ -290,44 +296,44 @@ class Translator(ast.NodeVisitor):
                 return
 
             call_type = "name"
-            if self.curr_scope.check_builtin_usage(c.func.id):
-                if c.func.id in Scope.BUILTINS_FUNC:
+            if self.curr_scope.check_builtin_usage(c.func.name):
+                if c.func.name in Scope.BUILTINS_FUNC:
                     type = "Function"
                 else:
                     type = "Class"
             else:
                 # Look in current context
-                type = getattr(self.curr_scope.lookup(c.func.id), "type", None)
-                name = c.func.id
-        elif isinstance(c.func, ast.Attribute):
+                type = getattr(self.curr_scope.lookup(c.func.name), "type", None)
+                name = c.func.name
+        elif isinstance(c.func, ast.Getattr):
             call_type = "attr"
-            name = "."+c.func.attr
-            if cls is not None and isinstance(c.func.value, ast.Call) and isinstance(c.func.value.func, ast.Name) :
-                name = c.func.value.func.id+name
-                if c.func.value.func.id == "super":
+            name = "."+c.func.attrname
+            if cls is not None and isinstance(c.func.expr, ast.CallFunc) and isinstance(c.func.expr.func, ast.Name) :
+                name = c.func.value.func.name+name
+                if c.func.value.func.name == "super":
                     # A super call
-                    if (not len(c.func.value.args) == 2):
+                    if (not len(c.func.expr.args) == 2):
                         self.raise_error("Only python 2 simple super supported", c)
-                    attrname = c.func.attr
+                    attrname = c.func.attrname
                     self.__write("%s(" % self.get_util_var_name("_super", "%s.helpers.super" % self.LIB_NAME))
                     self.__write("this, '%s')" %  attrname)
                     method_written = True
                     type = "Function"
-            elif isinstance(c.func.value, ast.Name) and c.func.value.id == "self":
+            elif isinstance(c.func.expr, ast.Name) and c.func.expr.name == "self":
                 # Look in Class context
                 if cls is not None:
                     type = getattr(cls.child(c.func.attr), "type", None)
             else:
                 # Create attribute chain
-                attrlst = [c.func.attr]
-                value = c.func.value
-                while isinstance(value, ast.Attribute):
-                    name = value.attr+name
-                    attrlst.append(value.attr)
-                    value = value.value
+                attrlst = [c.func.attrname]
+                value = c.func.expr
+                while isinstance(value, ast.Getattr):
+                    name = value.attrname+name
+                    attrlst.append(value.attrname)
+                    value = value.expr
                 if isinstance(value, ast.Name): # The last value must be a Name
-                    name = value.id+name
-                    ctx = self.curr_scope.lookup(value.id)
+                    name = value.name+name
+                    ctx = self.curr_scope.lookup(value.name)
                     while ctx is not None: # Walk up
                         ctx = ctx.child(attrlst.pop())
                         if ctx is not None and len(attrlst) == 0: # Win
@@ -335,8 +341,8 @@ class Translator(ast.NodeVisitor):
                             break
                     if type is None:
                             imports = self.curr_scope.all_imports()
-                            if value.id in imports:
-                                importname, varname = imports[value.id]
+                            if value.name in imports:
+                                importname, varname = imports[value.name]
                                 try:
                                     __import__(importname)
                                     obj = sys.modules[importname]
@@ -371,7 +377,13 @@ class Translator(ast.NodeVisitor):
         self.__parse_call_args(c)
         self.__write(")")
 
-    def visit_Name(self, n):
+    def visit_assname(self, n):
+        self.visit_name(n)
+
+    def visit_delname(self, n):
+        pass
+
+    def visit_name(self, n):
         """
         Translate an identifier. If the context is a method, substitute `self`
         with `this`.
@@ -382,28 +394,28 @@ class Translator(ast.NodeVisitor):
         None -> null
 
         """
-        if n.id == "True" or n.id == "False":
-            self.__write(n.id.lower())
-        elif n.id == "None":
+        if n.name == "True" or n.name == "False":
+            self.__write(n.name.lower())
+        elif n.name == "None":
             self.__write("null")
-        elif n.id in self.RESERVED_WORDS:
-            if not n.id in self.translated_names:
-                self.translated_names[n.id] = self.mod_scope.generate_variable("__keyword_"+n.id)
-            self.__write(self.translated_names[n.id])
+        elif n.name in self.RESERVED_WORDS:
+            if not n.name in self.translated_names:
+                self.translated_names[n.name] = self.mod_scope.generate_variable("__keyword_"+n.name)
+            self.__write(self.translated_names[n.name])
         else:
-            self.__write(n.id)
+            self.__write(n.name)
 
-    def visit_BinOp(self, o):
+    def visit_binop(self, o):
         """
         Translates a binary operator.
         Note: The modulo operator on strings is translated to left.sprintf(right)
         and currently the only spot where tuples are allowed.
 
         """
-        if isinstance(o.op, ast.Mod) and not isinstance(o.left, ast.Num):
+        if o.op == "%" and not (isinstance(o.left, ast.Const) and isinstance(o.left.value, int)):
             args = self.exe_first_differs(o.right.elts, rest_text=",") if isinstance(o.right, ast.Tuple) else self.exe_node(o.right)
             self.__write("%s.__mod__(%s)" % (self.exe_node(o.left), args))
-        elif isinstance(o.op, ast.Pow):
+        elif o.op == "**":
             pow_helper = self.get_util_var_name("_pow", "%s.helpers.pow" % self.LIB_NAME)
             self.__write("%s(%s, %s)" % (pow_helper, self.exe_node(o.left), self.exe_node(o.right)))
         else:
@@ -415,7 +427,7 @@ class Translator(ast.NodeVisitor):
             self.visit(o.right)
             if eprec >= prec: self.__write(")")
 
-    def visit_BoolOp(self, o):
+    def visit_boolop(self, o):
         """
         Translates a boolean operator.
 
@@ -432,7 +444,7 @@ class Translator(ast.NodeVisitor):
             self.visit(expr)
             if eprec >= prec: self.__write(")")
 
-    def visit_UnaryOp(self, o):
+    def visit_unaryop(self, o):
         """
         Translates a unary operator.
 
@@ -444,85 +456,101 @@ class Translator(ast.NodeVisitor):
         self.visit(o.operand)
         if prec > 2: self.__write(")")
 
-    def visit_Compare(self, c):
+    def visit_compare(self, c):
         """
         Translate a compare block.
 
         """
-        if len(c.ops) > 1:
-            self.raise_error("Comparisons with more than one operator are not supported", c)
+        inits = []
+        remaining = [len(c.ops)]
+        left_text = [self.exe_node(c.left)]
+        def op_executor(ops):
+            op, expr = ops
+            if len(c.ops) > 1:
+                self.__write("(")
 
-        op, expr = c.ops[0], c.comparators[0]
+            if remaining[0] > 1:
+                if not isinstance(expr, ast.Const) and not isinstance(expr, ast.Name):
+                    right_text = self.curr_scope.generate_variable("_op")
+                    inits.append("%s = %s;"% (right_text, self.exe_node(expr)))
+                else:
+                    right_text = self.exe_node(expr)
+            else:
+                right_text = self.exe_node(expr)
 
-        if not isinstance(op, ast.In) and not isinstance(op, ast.NotIn):
-            self.visit(c.left)
+            if op != "in" and op != "not in":
+                self.__write(left_text[0])
 
-        if isinstance(op, ast.IsNot) and expr.id == "None":
-            self.__write(" !== null")
-        elif isinstance(op, ast.In) or isinstance(op, ast.NotIn):
-            if isinstance(op, ast.NotIn):
-                self.__write(" !")
-            in_helper = self.get_util_var_name("_in", "%s.helpers.in"%self.LIB_NAME)
-            self.__write(" %s(%s, %s) " % (in_helper, self.exe_node(c.left), self.exe_node(expr)))
-        else:
-            self.__write(" %s " % (self.__get_op(op)))
-            prec, assoc = self.__get_expr_pa(expr)
-            if prec > 2: self.__write("(")
-            self.visit(expr)
-            if prec > 2: self.__write(")")
+            if op == "in" or op == "not in":
+                if op == "not in":
+                    self.__write(" !")
+                in_helper = self.get_util_var_name("_in", "%s.helpers.in"%self.LIB_NAME)
+                self.__write(" %s(%s, %s) " % (in_helper, left_text[0], right_text))
+            else:
+                self.__write(" %s " % (self.__get_op(op)))
+                prec, assoc = self.__get_expr_pa(expr)
+                if prec > 2: self.__write("(")
+                self.__write(right_text)
+                if prec > 2: self.__write(")")
+            left_text[0] = right_text
+            remaining[0] = remaining[0] - 1
+            if len(c.ops) > 1:
+                self.__write(")")
 
-    def visit_Dict(self, d):
+        body = self.exe_first_differs(c.ops, rest_text="&&", do_visit=op_executor)
+        c.inits = inits
+        self.__write(body)
+
+    def visit_dict(self, d):
         """
         Translate a dictionary expression.
 
         """
         with self.Executor() as items:
             first = True
-            for i in xrange(len(d.keys)):
-                key, value = d.keys[i], d.values[i]
+            for key, value in d.items:
                 if first:
                     first = False
                 else:
                     self.__write(",")
-                if isinstance(key, ast.Num):
-                    self.__write("%d: " % (key.n))
-                elif not isinstance(key, ast.Str):
+                if not isinstance(key, ast.Const):
                     self.raise_error("Only numbers and string literals are allowed in dictionary expressions", key)
+                if isinstance(key.value, int):
+                    self.__write("%d: " % (key.value))
                 else:
-                    if self.IDENTIFIER_RE.match(key.s):
-                        self.__write("%s: " % (key.s))
+                    if self.IDENTIFIER_RE.match(key.value):
+                        self.__write("%s: " % (key.value))
                     else:
-                        self.__write("\"%s\": " % (key.s))
+                        self.__write("\"%s\": " % (key.value))
                 self.visit(value)
         self.__write("{%s}" % items.result)
 
-    def visit_Subscript(self, s):
+    def visit_subscript(self, s):
         """
         Translate a subscript expression.
 
         """
 
         #   optimize simple index slice
-        if isinstance(s.ctx, ast.Load) or isinstance(s.ctx, ast.Assign) or isinstance(s.ctx, ast.Store) :
-            if isinstance(s.slice, ast.Index) and isinstance(s.slice.value, ast.Num) and s.slice.value.n >= 0:
+        if isinstance(s.parent, ast.Assign) or isinstance(s.parent, ast.Discard):# or isinstance(s.parent, ast.Load) or isinstance(s.parent, ast.Store) :
+            if isinstance(s.slice, ast.Index) and isinstance(s.slice.value, ast.Const) and s.slice.value.value >= 0:
                 s.simple = True
                 self.__write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
                 return
-            if isinstance(s.slice, ast.Index) and isinstance(s.slice.value, ast.Str):
+            if isinstance(s.slice, ast.Index) and isinstance(s.slice.value, ast.Const) and isinstance(s.slice.value.value, str) :
                 s.simple = True
                 self.__write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
                 return
 
         func = ""
-        if isinstance(s.ctx, ast.Load):
-            func = "l"
-        elif isinstance(s.ctx, ast.Del):
+        s.simple = True
+        if isinstance(s.parent, ast.Delete):
             func = "d"
-        elif isinstance(s.ctx, ast.Store):
+        elif isinstance(s.parent, ast.Assign) and s in s.parent.targets:
             func = "s"
             s.simple = False
         else:
-            self.raise_error("Subscript with context '%s' is not supported" % (str(s.ctx.__class__.__name__)), s)
+            func = "l"
 
         subscript = self.get_util_var_name("_subscript", ("%s.helpers.subscript" % self.LIB_NAME))
         value = self.exe_node(s.value)
@@ -540,10 +568,10 @@ class Translator(ast.NodeVisitor):
 
         self.__write("%s.%s.%s(%s,%s" % (subscript, func, type, value, args.result))
 
-        if not isinstance(s.ctx, ast.Store):
+        if s.simple:
             self.__write(")")
 
-    def visit_Assign(self, a):
+    def visit_assign(self, a):
         """
         Translate an assignment.
         if target is tuple, became self executable function:
@@ -589,7 +617,7 @@ class Translator(ast.NodeVisitor):
         if isinstance(target, ast.Subscript) and not target.simple:
             self.__write(")")
 
-    def visit_AugAssign(self, a):
+    def visit_augassign(self, a):
         """
         Translate an assignment operator.
 
@@ -605,7 +633,7 @@ class Translator(ast.NodeVisitor):
         self.__write(" %s= " % (self.__get_op(a.op)))
         self.visit(a.value)
 
-    def visit_For(self, f):
+    def visit_for(self, f):
         """
         Translate a for loop.
 
@@ -614,13 +642,13 @@ class Translator(ast.NodeVisitor):
         len_var = self.curr_scope.generate_variable("_len")
         is_tuple = False
 
-        if isinstance(f.target, ast.Name):
-            iter_var = f.target.id
+        if isinstance(f.target, ast.AssName):
+            iter_var = f.target.name
         else:
             is_tuple = True
             iter_var = []
             for elt in f.target.elts:
-                t = elt.id
+                t = elt.name
                 iter_var.append(t)
 
         list_var = self.curr_scope.generate_variable("_list")
@@ -641,7 +669,7 @@ class Translator(ast.NodeVisitor):
             self.__write("if(%s == %s){%s}" % (i_var, len_var, self.exe_body(f.orelse)))
 
 
-    def visit_ClassDef(self, c):
+    def visit_class(self, c):
         """
         Translates a Python class into Javascript class
         This inserts a Class context which influences the translation of
@@ -652,7 +680,7 @@ class Translator(ast.NodeVisitor):
         ctor_name = self.curr_scope.generate_variable("%s" % fullname, declared=False)
         self.__push_context(c.name)
 
-        bases = filter(lambda b: not isinstance(b, ast.Name) or b.id != "object", c.bases)
+        bases = filter(lambda b: not isinstance(b, ast.Name) or b.name != "object", c.bases)
         if len(bases) > 0:
             bases_param = "[%s]" % self.exe_first_differs(bases, rest_text=", ")
         else:
@@ -660,33 +688,24 @@ class Translator(ast.NodeVisitor):
 
         self.__change_buffer(self.HEADER_BUFFER)
 
-        # Write docstring
-        if len(self.curr_scope.docstring) > 0:
-            self.__write_docstring(self.curr_scope.docstring)
 
         # Named constructor function
         self.__write("function %s(){ this.__init__.apply(this, arguments); } " % (ctor_name))
-
+        if c.doc:
+            self.__write_docstring(c.doc)
         create_class = self.get_util_var_name("_class", "%s.helpers.class" %self.LIB_NAME)
         self.__write("%s = %s(%s, %s, function(){" % (c.name, create_class, ctor_name, bases_param))
 
-        self.__change_buffer(self.BODY_BUFFER)
 
+        self.__change_buffer(self.BODY_BUFFER)
 
         exported = []
         proto_only = []
         cls_only = []
         # Instance member
-        first_docstring = True
         for stmt in c.body:
-            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
-                if first_docstring:
-                    first_docstring = False
-                else:
-                    self.__write_docstring(stmt.value.s)
-                continue
             exported.extend(self.__get_identifiers(stmt))
-            if isinstance(stmt, ast.FunctionDef):
+            if isinstance(stmt, ast.Function):
                 decorators = self.__get_special_decorators(stmt)
                 if not "staticmethod" in decorators:
                     proto_only.append(stmt.name)
@@ -711,7 +730,7 @@ class Translator(ast.NodeVisitor):
 
         self.__pop_context()
 
-    def visit_FunctionDef(self, f):
+    def visit_function(self, f):
         """
         Translate a Python function into a JavaScript function.
         Depending on the context, it is translated to `var name = function (...)`
@@ -730,8 +749,8 @@ class Translator(ast.NodeVisitor):
         self.__change_buffer(self.HEADER_BUFFER)
 
         # Write docstring
-        if len(self.curr_scope.docstring) > 0:
-            self.__write_docstring(self.curr_scope.docstring)
+        if f.doc:
+            self.__write_docstring(f.doc)
 
         # Declaration
         self.__write("%s = function (" % (f.name))
@@ -748,8 +767,8 @@ class Translator(ast.NodeVisitor):
 
         # Write self = this
         if is_method and not is_static:
-            self.curr_scope.declare_variable(f.args.args[0].id)
-            self.__write("%s = this;"%f.args.args[0].id)
+            self.curr_scope.declare_variable(f.args.args[0].name)
+            self.__write("%s = this;"%f.args.args[0].name)
 
         # Function body
         if "JSNoOp" in decorators:
@@ -763,7 +782,7 @@ class Translator(ast.NodeVisitor):
         self.__pop_context()
 
 
-    def visit_TryExcept(self, tf):
+    def visit_tryexcept(self, tf):
         ex_var = self.curr_scope.generate_variable("_ex")
 
         self.__write("try{ %s }" % self.exe_body(tf.body, True, True))
@@ -775,7 +794,7 @@ class Translator(ast.NodeVisitor):
             if handler.type is not None:
                 if has_first:
                     self.__write("else ")
-                if(isinstance(handler.type, ast.Attribute) or isinstance(handler.type, ast.Name)):
+                if(isinstance(handler.type, ast.AssAttr) or isinstance(handler.type, ast.Name)):
                     self.__write("if (%s instanceof %s){" %(ex_var, self.exe_node(handler.type)))
                 elif(isinstance(handler.type, ast.Tuple)):
                     self.__write("if (%s){" % self.exe_first_differs(handler.type.elts,
@@ -790,7 +809,7 @@ class Translator(ast.NodeVisitor):
                     has_if = True
                 has_first = True
             if handler.name is not None:
-                self.__write("%s = %s;" %(handler.name.id, ex_var))
+                self.__write("%s = %s;" %(handler.name.name, ex_var))
             self.__write(self.exe_body(handler.body, True, True))
             if has_if:
                 self.__write("}");
@@ -804,7 +823,7 @@ class Translator(ast.NodeVisitor):
                     self.__write("else { throw %s }" % ex_var)
         self.__write("}");
 
-    def visit_ListComp(self, lc):
+    def visit_listcomp(self, lc):
         """
         [expr for item if expr in lists] ->
             (function(){
@@ -820,13 +839,13 @@ class Translator(ast.NodeVisitor):
         is_tuple = False
         iter_var = None
 
-        if isinstance(f.target, ast.Name):
-            iter_var = f.target.id
+        if isinstance(f.target, ast.AssName):
+            iter_var = f.target.name
         else:
             is_tuple = True
             iter_var = []
             for elt in f.target.elts:
-                t = elt.id
+                t = elt.name
                 iter_var.append(t)
 
         self.__push_context(lc.name)
@@ -859,7 +878,7 @@ class Translator(ast.NodeVisitor):
         self.__pop_context()
 
 
-    def visit_Raise(self, r):
+    def visit_raise(self, r):
         type = self.exe_node(r.type)
 
         if self.use_throw_helper:
@@ -869,37 +888,35 @@ class Translator(ast.NodeVisitor):
         else:
             self.__write("throw %s" % type)
 
-    def visit_Print(self, p):
+    def visit_print(self, p):
         """
         Translate print "aa" to print("aa")
 
         """
         self.__write("print(%s)" % self.exe_first_differs(p.values, rest_text=","))
 
-    def visit_Num(self, n):
-        self.__write(str(n.n))
+    def visit_discard(self, v):
+        self.visit(v.value)
 
-    def visit_Str(self, s):
-        """
-        Output a quoted string.
-        Cleverly uses JSON to convert it ;)
-
-        """
-        self.__write(simplejson.dumps(s.s))
-
-
-    def visit_Expr(self, expr):
-        self.visit(expr.value)
+    def visit_const(self, t):
+        if isinstance(t.value, str):
+            self.__write(simplejson.dumps(t.value))
+        elif isinstance(t.value, bool):
+            self.__write(str(t.value).lower())
+        elif isinstance(t.value, int) or isinstance(t.value, float):
+            self.__write(str(t.value))
+        else:
+            raise ValueError("const not recognized")
 
 
-    def visit_Global(self, g):
+    def visit_global(self, g):
         """
         Declares variables as global.
 
         """
         pass
 
-    def visit_Lambda(self, l):
+    def visit_lambda(self, l):
         """
         Translates a lambda function.
 
@@ -908,14 +925,14 @@ class Translator(ast.NodeVisitor):
             self.__parse_args(l.args)
         self.__write("function(%s) {return %s; }" % (args.result, self.exe_node(l.body)))
 
-    def visit_Yield(self, y):
+    def visit_yield(self, y):
         """
         Translate the yield operator.
 
         """
-        self.__write("yield %s" % self.exe_node(y.value))
+        self.raise_error("yield are not supported", y)
 
-    def visit_Return(self, r):
+    def visit_return(self, r):
         """
         Translate the return statement.
 
@@ -925,14 +942,14 @@ class Translator(ast.NodeVisitor):
         else:
             self.__write("return")
 
-    def visit_List(self, l):
+    def visit_list(self, l):
         """
         Translate a list expression.
 
         """
         self.__write("[%s]" % self.exe_first_differs(l.elts, rest_text=","))
 
-    def visit_Delete(self, d):
+    def visit_delete(self, d):
         """
         Translate a delete statement.
 
@@ -944,52 +961,67 @@ class Translator(ast.NodeVisitor):
                 self.__write("delete %s" % self.exe_node(target))
 
 
-    def visit_Pass(self, p):
+    def visit_pass(self, p):
         """
         Translate the `pass` statement. Places a comment.
 
         """
         self.__write("/* pass */")
 
-    def visit_Continue(self, c):
+    def visit_continue(self, c):
         """
         Translate the `continue` statement.
 
         """
         self.__write("continue")
 
-    def visit_Break(self, c):
+    def visit_break(self, c):
         """
         Translate the `break` statement.
 
         """
         self.__write("break")
 
-    def visit_Attribute(self, a):
+    def visit_getattr(self, a):
         """
         Translate an attribute chain.
 
         """
-        self.__write("%s.%s" % (self.exe_node(a.value), a.attr))
+        self.__write("%s.%s" % (self.exe_node(a.expr), a.attrname))
 
-    def visit_If(self, i):
+    def visit_assattr(self, a):
+        """
+        Translate an attribute chain.
+
+        """
+        self.__write("%s.%s" % (self.exe_node(a.expr), a.attrname))
+
+
+    def visit_if(self, i):
         """
         Translate an if-block.
 
         """
-        self.__write("if ( %s ) { %s }" % (self.exe_node(i.test), self.exe_body(i.body)))
+        test = self.exe_node(i.test)
+        if isinstance(i.test, ast.Compare):
+            self.__write("".join(i.test.inits))
+        self.__write("if ( %s ) { %s }" % (test, self.exe_body(i.body)))
         if len(i.orelse) > 0:
             self.__write("else {%s}" % self.exe_body(i.orelse))
 
 
-    def visit_IfExp(self, i):
+    def visit_ifexp(self, i):
         """
         Translate an if-expression.
 
         """
-        self.__write("%s ? %s : %s" % (self.exe_node(i.test), self.exe_node(i.body), self.exe_node(i.orelse)))
+        test = self.exe_node(i.test)
+        if isinstance(i.test, ast.Compare):
+            if len(i.test.inits) > 0:
+                self.raise_error("if else node cannot have complicated multiple comparison", i)
+        self.__write("%s ? %s : %s" % (test, self.exe_node(i.body), self.exe_node(i.orelse)))
 
-    def visit_While(self, w):
+    def visit_while(self, w):
         """
         Translate a while loop.
 
@@ -997,20 +1029,24 @@ class Translator(ast.NodeVisitor):
         if len(w.orelse) > 0:
             self.raise_error("`else` branches of the `while` statement are not supported", w.orelse[0])
 
-        self.__write("while (%s){ %s }" % (self.exe_node(w.test), self.exe_body(w.body)))
+        test = self.exe_node(w.test)
+        if isinstance(w.test, ast.Compare):
+            self.__write("".join(w.test.inits))
+
+        self.__write("while (%s){ %s }" % (test, self.exe_body(w.body)))
 
 
 
-    def visit_TryFinally(self, tf):
+    def visit_tryfinally(self, tf):
         self.__write("try{ %s } finally { %s }" % (self.exe_body(tf.body, True, True),  self.exe_body(tf.finalbody, True, True)))
 
-    def visit_Assert(self, a):
+    def visit_assert(self, a):
         pass
 
-    def visit_Tuple(self, t):
+    def visit_tuple(self, t):
         self.__write("[%s]" % self.exe_first_differs(t.elts, rest_text=","))
 
-    def generic_visit(self, node):
+    def visit_default(self, node):
         raise ParseError("Could not parse node type '%s'" % str(node.__class__.__name__), node.lineno, node.col_offset)
 
     def __parse_call_args(self, args, comma_first=False):
@@ -1019,11 +1055,19 @@ class Translator(ast.NodeVisitor):
 
         """
         first = True
+        i = 0
         for arg in args.args:
             if (not first) or comma_first:
                 self.__write(", ")
             first = False
-            self.visit(arg)
+            if isinstance(arg, ast.Keyword):
+                make_kwargs = self.get_util_var_name("_make_kwargs", "%s.helpers.make_kwargs" % self.LIB_NAME)
+                kwargs = self.exe_first_differs(args.args[i:], rest_text=",",do_visit=lambda arg: self.__write("%s:%s" % (arg.arg, (self.exe_node(arg.value)))))
+                self.__write("%s({%s})" % (make_kwargs, kwargs))
+                break
+            else:
+                self.visit(arg)
+            i += 1
 
         if args.starargs is not None:
             if (not first) or comma_first:
@@ -1037,14 +1081,13 @@ class Translator(ast.NodeVisitor):
             first = False
             self.__write(self.exe_node(args.kwargs))
 
+            """
         if len(args.keywords) > 0:
             #todo has keywords and kwargs
             if (not first) or comma_first:
                 self.__write(", ")
             first = False
-            make_kwargs = self.get_util_var_name("_make_kwargs", "%s.helpers.make_kwargs" % self.LIB_NAME)
-            kwargs = self.exe_first_differs(args.keywords, rest_text=",",do_visit=lambda arg: self.__write("%s:%s" % (arg.arg, (self.exe_node(arg.value)))))
-            self.__write("%s({%s})" % (make_kwargs, kwargs))
+            """
 
 
     def __parse_args(self, args, strip_first = False):
@@ -1105,12 +1148,12 @@ class Translator(ast.NodeVisitor):
 
     def __get_identifiers(self, stmt):
         names = []
-        if isinstance(stmt, ast.ClassDef) or isinstance(stmt, ast.FunctionDef):
+        if isinstance(stmt, ast.Class) or isinstance(stmt, ast.Function):
             names.append(stmt.name)
         if isinstance(stmt, ast.Assign):
             for target in stmt.targets:
                 if isinstance(target, ast.Name):
-                    names.append(target.id)
+                    names.append(target.name)
         return names
 
 
@@ -1120,22 +1163,25 @@ class Translator(ast.NodeVisitor):
 
         """
         decorators = {}
-        if isinstance(stmt, ast.FunctionDef):
-            for dec in stmt.decorator_list:
+        if isinstance(stmt, ast.Function) and stmt.decorators is not None:
+            for dec in stmt.decorators.nodes:
                 if isinstance(dec, ast.Name):
-                    if dec.id in ["staticmethod", "JSNoOp"] :
-                        decorators[dec.id] = []
+                    if dec.name in ["staticmethod", "JSNoOp"] :
+                        decorators[dec.name] = []
                         continue
         return decorators
 
     def __write_decorators(self, stmt):
         current = stmt.name
-        for dec in stmt.decorator_list:
+        if stmt.decorators is None:
+            return
+
+        for dec in stmt.decorators.nodes:
             if isinstance(dec, ast.Name):
-                if dec.id in ["staticmethod", "JSNoOp"] :
+                if dec.name in ["staticmethod", "JSNoOp"] :
                     continue
-                header = "%s" % dec.id
-            elif isinstance(dec, ast.Call):
+                header = "%s" % dec.name
+            elif isinstance(dec, ast.CallFunc):
                 with self.Executor() as call:
                     self.visit(dec.func)
                     self.__write("(")
@@ -1146,8 +1192,7 @@ class Translator(ast.NodeVisitor):
                 self.raise_error("This class decorator is not supported. Only decorators of pycow.decorators are supported",dec)
             current = "%s(%s)" % (header, current)
 
-        if current != stmt.name:
-            self.__write(";%s = %s" % (stmt.name, current))
+        self.__write(";%s = %s" % (stmt.name, current))
 
 
     def __get_op(self, op):
@@ -1155,32 +1200,30 @@ class Translator(ast.NodeVisitor):
         Translates an operator.
 
         """
-        return self.OP_MAP[op.__class__.__name__][0]
+        return self.OP_MAP[op][0]
 
     def __get_op_cpa(self, op):
         """
         Get operator chars, precedence and associativity.
 
         """
-        return self.OP_MAP[op.__class__.__name__]
+        return self.OP_MAP[op]
 
     def __get_expr_pa(self, expr):
         """
         Get the precedence and associativity of an expression.
 
         """
-        if isinstance(expr, ast.Expr):
-            expr = expr.value
         name = expr.__class__.__name__
         if name in ("BoolOp", "BinOp", "UnaryOp"):
             return self.__get_op_cpa(expr.op)[1:]
-        elif name in ("Lambda", "Dict", "List", "Num", "Str", "Name"):
+        elif name in ("Lambda", "Dict", "List", "Num", "Str", "Name", "Const"):
             return (1, False)
         elif name == "IfExp":
             return (15, False)
-        elif name in ("Attribute", "Subscript"):
+        elif name in ("GetAttr", "Subscript"):
             return (1, True)
-        elif name in ("Call", "Repr"):
+        elif name in ("CallFunc", "Repr"):
             return (2, True)
         elif name == "Compare":
             return (8, True)
@@ -1268,8 +1311,10 @@ class Translator(ast.NodeVisitor):
     def exe_body(self, body, skip_docstring=False, skip_global=False):
         with self.Executor() as exe:
             for stmt in body:
+                """
                 if skip_docstring and isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
                     continue # Skip docstring
+                """
                 if skip_global and isinstance(stmt, ast.Global): # The `global` statement is invisible
                     self.visit(stmt)
                     continue
@@ -1331,14 +1376,17 @@ def translate_string(input,namespace=""):
     moo.visit(tree)
     return config["output"].getvalue()
 
+
+
 def translate_file(config):
     config["use_throw_helper"] = True
     try:
-        tree = ast.parse(config["input"], config["input_name"])
+        tree = builder.ASTNGBuilder().string_build(config["input"], config["input_name"])
     except SyntaxError as e:
         raise ParseError(e.msg, e.lineno, e.offset, True)
 
     scope_gen = PyScopeGenerator(config["namespace"], tree)
+    scope_gen.visit(tree)
 
     moo = Translator(scope_gen.root_scope, config)
     moo.visit(tree)

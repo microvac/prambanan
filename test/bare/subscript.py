@@ -11,3 +11,5 @@ a["pa pa"] = 5
 a[b] = 4
 del a["pa"]
 a["pa pa":"papa"]
+i = a["pa pa":"papa"]
+

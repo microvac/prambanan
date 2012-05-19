@@ -1,5 +1,5 @@
 (function (prambanan) {
-    var _iter, a;
+    var _iter;
     _iter = prambanan.helpers.iter;
     a = (function () {
         var _i, _len, _list, _results;
@@ -61,7 +61,5 @@
         }
         return _results;
     })();
-    prambanan.exports('', {
-        a: a
-    });
+    prambanan.exports('', {});
 })(prambanan);

@@ -27,13 +27,8 @@ __add__, __sub__ not supported:
 
 #Not supported and will error:
 
-tuple variable in class declaration
-multiple assignment in class declaration
 while else
 list comprehension with more than one generator
-decorators that only supported, @staticmethod, @JS_NoOp
 python 3 super
 literals in dictionary key which are not string or number
-comparison with more than one operator -> 10 > a > 13
 yield
-

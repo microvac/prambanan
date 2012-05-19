@@ -1,10 +1,14 @@
-
 class Class1(object):
+    """
+    doc doc
+    """
 
     def __init__(self):
         print "init 1"
 
-    def method1(self):
+    def method1(self, b):
+        b = 3
+        self = 3
         print "method1"
 
 class Class2(Class1):

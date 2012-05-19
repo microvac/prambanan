@@ -34,6 +34,7 @@ class TestExpression(unittest.TestCase):
             for filename in filenames:
                 name, ext = os.path.splitext(filename)
                 if ext == ".py":
+                    print "processing %s.py" % name
                     config = self.create_config(filename)
                     translate_file(config)
                     result = jsbeautifier.beautify(config["output"].getvalue(), js_opt)

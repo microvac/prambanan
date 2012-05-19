@@ -1,9 +1,10 @@
-import ast
+from logilab.astng.utils import ASTWalker
+from logilab.astng import nodes as ast
 from scope import Scope
 from . import ParseError
 
 
-class PyScopeGenerator(ast.NodeVisitor):
+class PyScopeGenerator(ASTWalker):
     """
     First-pass ast visitor. Builds a scope that registers variable, helper for type inference
     and captures docstrings.
@@ -11,6 +12,7 @@ class PyScopeGenerator(ast.NodeVisitor):
     """
 
     def __init__(self, namespace, node):
+        ASTWalker.__init__(self, self)
         self.node = node
         self.stack = []
         self.scope = None
@@ -21,10 +23,9 @@ class PyScopeGenerator(ast.NodeVisitor):
 
         self.namespace = namespace
 
-        self.visit_If = self.visit_body
-        self.visit_ExceptHandler = self.visit_body
+        self.visit_if = self.visit_body
+        self.visit_excepthandler = self.visit_body
 
-        self.visit(node)
 
 
     def push_scope(self, type, name):
@@ -51,16 +52,16 @@ class PyScopeGenerator(ast.NodeVisitor):
                 node.col_offset
                 )
 
-        if node.__class__.__name__ == "FunctionDef":
+        if node.__class__.__name__ == "Function":
             is_parent_class = self.current_scope.type == "Class"
             self.push_scope("Method" if self.current_scope.type == "Class" else "Function", node.name)
             first = True
             for arg in node.args.args:
                 if not (first and is_parent_class):
-                    self.current_scope.undeclared_variables.append(arg.id)
+                    self.current_scope.undeclared_variables.append(arg.name)
                 if first:
                     first=False
-        elif node.__class__.__name__ == "ClassDef":
+        elif node.__class__.__name__ == "Class":
             self.push_scope("Class", node.name)
         elif node.__class__.__name__ == "ListComp":
             self.push_scope("ListComp", node.name)
@@ -75,33 +76,33 @@ class PyScopeGenerator(ast.NodeVisitor):
 
         self.pop_scope()
 
-    def visit_ClassDef(self, c):
+    def visit_class(self, c):
         self.current_scope.declare_variable(c.name)
-        bases = filter(lambda b: not isinstance(b, ast.Name) or b.id != "object", c.bases)
+        bases = filter(lambda b: not isinstance(b, ast.Name) or b.name != "object", c.bases)
         if len(bases) == 0:
             self.current_scope.use_builtin("object")
         self.visit_func_or_class(c)
 
-    def visit_FunctionDef(self, c):
+    def visit_function(self, c):
         self.current_scope.declare_variable(c.name)
         self.visit_func_or_class( c)
 
-    def visit_Module(self, m):
+    def visit_module(self, m):
         m.name = "Module"
         self.visit_func_or_class( m)
 
-    def visit_ListComp(self, lc):
+    def visit_listcomp(self, lc):
         for f in lc.generators:
             if isinstance(f, ast.Name):
-                self.current_scope.declare_variable(f.target.id)
+                self.current_scope.declare_variable(f.target.name)
             elif isinstance(f, ast.Tuple):
                 for elt in f.target.elts:
-                    self.current_scope.declare_variable(elt.id)
+                    self.current_scope.declare_variable(elt.name)
 
         lc.name = self.current_scope.generate_list_comp_id()
         self.visit_func_or_class(lc)
 
-    def visit_ImportFrom(self, i):
+    def visit_from(self, i):
         self.current_scope.use_builtin("__import__")
         module = i.module
         if i.level == 1:
@@ -109,18 +110,18 @@ class PyScopeGenerator(ast.NodeVisitor):
                 module = self.namespace
             else:
                 module = self.namespace+"."+module
-        for name in i.names:
-            varname = name.asname if name.asname else name.name
+        for name,asname in i.names:
+            varname = asname if asname else name
             self.current_scope.declare_variable(varname)
-            self.current_scope.imports[varname] = (module, name.name)
+            self.current_scope.imports[varname] = (module, name)
 
-    def visit_Import(self, i):
+    def visit_import(self, i):
         self.current_scope.use_builtin("__import__")
-        for name in i.names:
-            importname = name.name
-            varname = name.name
-            if name.asname:
-                varname = name.asname
+        for name, asname in i.names:
+            importname = name
+            varname = name
+            if asname:
+                varname = asname
             else:
                 if "." in importname:
                     importname = importname[0:importname.find(".")]
@@ -128,28 +129,28 @@ class PyScopeGenerator(ast.NodeVisitor):
             self.current_scope.declare_variable(varname)
             self.current_scope.imports[importname] =  (importname, None)
 
-    def visit_Print(self, p):
+    def visit_print(self, p):
         self.current_scope.use_builtin("print")
 
-    def visit_Call(self, node):
+    def visit_call(self, node):
         for arg in node.args:
             self.visit(arg)
 
-    def visit_TryExcept(self, node):
+    def visit_tryexcept(self, node):
         self.visit_body(node)
         for handler in  node.handlers:
             if(handler.name is not None):
-                self.current_scope.declare_variable(handler.name.id)
+                self.current_scope.declare_variable(handler.name.name)
             self.visit_body(handler)
 
-    def visit_Global(self, g):
+    def visit_global(self, g):
         for name in g.names:
             self.current_scope.global_variables.append(g)
 
-    def visit_While(self, w):
+    def visit_while(self, w):
         self.visit_body(w)
 
-    def visit_Expr(self, expr):
+    def visit_expr(self, expr):
         self.visit(expr.value)
 
     def visit_body(self, node):
@@ -158,10 +159,10 @@ class PyScopeGenerator(ast.NodeVisitor):
         for stmt in getattr(node, "orelse", []):
             self.visit(stmt)
 
-    def visit_Assign(self, stmt):
+    def visit_assign(self, stmt):
         if self.current_scope.type == "Module":
             if len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
-                if stmt.targets[0].id == "__all__":
+                if stmt.targets[0].name == "__all__":
                     if not isinstance(stmt.value, ast.List):
                         raise ParseError("Value of `__all__` must be a list expression",stmt.lineno, stmt.col_offset)
                     self.current_scope.module_all = []
@@ -169,45 +170,47 @@ class PyScopeGenerator(ast.NodeVisitor):
                         if not isinstance(expr, ast.Str):
                             raise ParseError("All elements of `__all__` must be strings", expr.lineno, expr.col_offset)
                         self.current_scope.module_all.append(expr.s)
-                elif stmt.targets[0].id == "__license__":
+                elif stmt.targets[0].name == "__license__":
                     if not isinstance(stmt.value, ast.Str):
                         raise ParseError("Value of `__license__` must be a string",stmt.lineno, stmt.col_offset)
                     self.current_scope.module_license = stmt.value.s
 
         for target in stmt.targets:
-            if isinstance(target, ast.Name):
-                self.current_scope.declare_variable(target.id)
+            if isinstance(target, ast.AssName):
+                self.current_scope.declare_variable(target.name)
             elif isinstance(target, ast.Tuple):
                 for elt in target.elts:
-                    if isinstance(elt, ast.Name):
-                        self.current_scope.declare_variable(elt.id)
+                    if isinstance(elt, ast.AssName):
+                        self.current_scope.declare_variable(elt.name)
 
         self.visit(stmt.value)
 
-    def visit_TryFinally(self, node):
+    def visit_tryfinally(self, node):
         for stmt in node.body:
             self.visit(stmt)
         for stmt in node.finalbody:
             self.visit(stmt)
 
-    def generic_visit(self, node):
+    def visit_default(self, node):
         pass
 
-    def visit_Return(self, node):
+    def visit_return(self, node):
         self.visit(node.value)
 
-    def visit_For(self, f):
-        if isinstance(f.target, ast.Name):
-            self.current_scope.declare_variable(f.target.id)
+    def visit_for(self, f):
+        if isinstance(f.target, ast.AssName):
+            self.current_scope.declare_variable(f.target.name)
         else:
             for elt in f.target.elts:
-                self.current_scope.declare_variable(elt.id)
+                self.current_scope.declare_variable(elt.name)
         self.visit_body(f)
 
     def __get_docstring(self, node):
-        if len(node.body) > 0:
+        """
+        if len(node.body) < 0:
             stmt = node.body[0]
             if isinstance(stmt, ast.Expr):
                 if isinstance(stmt.value, ast.Str):
                     self.current_scope.docstring = stmt.value.s
+        """
 
