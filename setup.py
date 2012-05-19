@@ -19,11 +19,12 @@ setup(name='prambanan',
       zip_safe=False,
       install_requires=[
           "simplejson",
-          "argparse",
           "chameleon",
           "logilab_astng",
       ],
       entry_points="""
+      [prambanan.provider]
+      main = prambanan.prambanan_provider:MainPrambananProvider
       [console_scripts]
       prambanan = prambanan.cmd:main
       """

@@ -64,6 +64,14 @@ class Scope(object):
             return dict(self.imports.items() + self.parent.all_imports().items())
         return self.imports
 
+    def imported_modules(self):
+        imports = []
+        for module,var in self.imports.values():
+            imports.append(module)
+        for id, child in self.identifiers.items():
+            imports.extend(child.imported_modules())
+        return imports
+
     def all_used_builtins(self):
         builtins = self.used_builtins[:]
         for id, child in self.identifiers.items():

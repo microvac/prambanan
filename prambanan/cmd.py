@@ -3,8 +3,14 @@ import os
 import sys
 import argparse
 
+from collections import OrderedDict
+
 from prambanan.jsbeautifier import beautify
-from prambanan.compiler import ParseError
+from prambanan.compiler import (
+    ParseError, DirectoryModule, JavascriptModule,
+    PythonModule, files_to_modules
+)
+from prambanan.compiler.provider import all_providers
 from prambanan.compiler.pytranslator import translate_file
 
 
@@ -14,167 +20,168 @@ def usage(argv):
           '(example: "%s development.ini clean")' % (cmd, cmd))
     sys.exit(1)
 
-demo_config = {
-    "export_map": {},
-    "indent": "\t",
-    "out_filename": "",
-    "in_filenames":[],
-    "warnings": True,
-    "bare": False
-    }
-
 def construct_parser():
-    """
-    job configs:
-        -t/--type: job type: [python|zpt] default: python
-        --bare
-        -d/--output-directory: all result saved on that directory default all saved to stdout
-        -c/--job-config config_file: merge job config in that file to this file
-        --generate-imports: imported modules also generated
-        --watch | watch
-        --clean | clean output -directory
-
-    sub configs:
-        -n/--namespace: target namespace
-        -b/--base-namespace: target base namespace
-        -o/--output: file location relative to job base directory,
-            if not exists but parent module has output dir, result will be concatenated in that file
-
-    """
     parser = argparse.ArgumentParser(
-        description="Manage assets.")
+        description="Compiles python to javascript.")
 
-    #Job config
-    parser.add_argument("-t", "--type", dest="type",
-        default = "python", type=str,
-        help="job type, python|zpt")
-    parser.add_argument("-d", "--output-directory", dest="output_directory",
-        type=str, default=None,
-        help="output directory, or std output if empty")
-    parser.add_argument("--generate_import", dest="generate_import",
-        default = False, const=True, type=bool, nargs="?",
-        help="also generate imported module")
-    parser.add_argument("--bare", dest="bare",
-        default = False, const=True, type=bool, nargs="?",
-        help="don't wrap result")
-
-    #subconfig
-    parser.add_argument("-n", "--namespace", dest="namespace",
-        default = None, type=str,
-        help="export namespace")
-    parser.add_argument("-b", "--base-namespace", dest="base_namespace",
-        default = "", type=str,
-        help="base export namespace")
-    parser.add_argument("-c", "--python-config", dest="python_config",
-        default = None, type=str,
-        help="python config file")
-    parser.add_argument("-o", "--output", dest="output",
-        type=str, default=None,
-        help="output file, or std output if empty")
-    parser.add_argument("--indent", dest="indent",
-        type=str, default="\t",
-        help="indentation chars")
-    parser.add_argument("--type-warning", dest="type_warning",
-        default = False, const=True, type=bool, nargs="?",
-        help="warn when not finding type")
     parser.add_argument('files', metavar='f', type=str, nargs='*',
         help='input filenames')
+
+    parser.add_argument("-t", "--type", dest="type",
+        default = "python", type=str,
+        help="job type, python|zpt|import")
+    parser.add_argument("-o", "--output",
+        type=argparse.FileType('w'), default=sys.stdout,
+        help="output file, or std output if empty")
+    parser.add_argument("-n", "--namespace", dest="base_namespace",
+        default = "", type=str,
+        help="base export namespace, something that appends to filename")
+    parser.add_argument("--no-wrap", action="store_true", dest="bare",
+        help="don't wrap result")
+    parser.add_argument("--no-beautify", action="store_false", dest="beautify",
+        help="don't beautify result")
+
+    parser.add_argument("--no-generate-result", action="store_false", dest="generate_result",
+        help="don't generate result")
+    parser.add_argument("--generate-imports", action="store_true",
+        help="also generate imported module")
+    parser.add_argument("--generate-base", action="store_true",
+        help="also generate base library")
+
+    parser.add_argument("--type-warning", action="store_true",
+        help="warn when not finding type")
+    parser.add_argument("--import-warning", action="store_true",
+        help="warn when cannot resolve import")
+
     return parser
 
-class FileBuffer(StringIO):
-    def __init__(self, filename):
-        self.filename = filename
-        StringIO.__init__(self)
+def walk_import(import_name, modules):
+    if import_name in modules:
+        module = modules[import_name]
+        for dependency in module.dependencies:
+            for dep_name, dep_module in walk_import(dependency, modules):
+                yield (dep_name, dep_module)
+        yield (import_name, module)
 
+def walk_imports(import_names, modules):
+    results = OrderedDict()
+    for import_name in import_names:
+        for name, value in  walk_import(import_name, modules):
+            if name not in results:
+                results[name] = value
+    return results
 
-def process_config(parser, config):
-    result = {"__file__": os.path.abspath(config)}
-    execfile(config, result)
-    for item in result["configs"]:
-        default = parser.parse_args("")
-        default.__dict__.update(item)
-        yield default
-
-def process_file(args, output):
+def get_py_config(args, filename, output, overridden_types):
     base_namespace = args.base_namespace
+
     warnings = {}
     if args.type_warning:
         warnings["type"] = True
+    if args.import_warning:
+        warnings["import"] = True
 
-    for filename in args.files:
-        file = open(filename, 'r')
-        namespace = args.namespace
-        if namespace is None:
-            name, ext = os.path.splitext(os.path.basename(file.name))
-            namespace = name if base_namespace == "" else "%s.%s" % (base_namespace, name)
-        lines = file.readlines()
-        input = StringIO("".join(lines)).read()
-        file.close()
-        yield {
-            "namespace": namespace,
-            "input_name": os.path.basename(file.name),
-            "input_lines": lines,
-            "input": input,
-            "warnings": warnings,
-            "indent": args.indent,
-            "bare": args.bare,
-            "output": output,
-            }
+    base_name = os.path.basename(filename)
+    dir_name = os.path.dirname(filename)
+    name, ext = os.path.splitext(base_name)
+    namespace = name if base_namespace == "" else "%s.%s" % (base_namespace, name)
 
-def process(parser, args, out_files, out=None):
-    if args.python_config is not None:
-        for item in process_config(parser, args.python_config):
-            if out is None:
-                out = FileBuffer(None) if item.output is None else FileBuffer(item.output)
-                out_files.append(out)
-            for processed in process(parser, item, out_files, out):
-                yield processed
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+    input = StringIO("".join(lines)).read()
+
+    native = None
+    if base_name == "__init__":
+        native_file = os.path.join(dir_name, "native.js")
     else:
-        if out is None:
-            out = FileBuffer(None)
-            out_files.append(out)
-        for result in process_file(args, out):
-            yield result
+        native_file = os.path.join(dir_name, name+"_native.js")
+    if os.path.isfile(native_file):
+        with open(native_file, "r") as f:
+            native = f.readlines()
+    return {
+        "namespace": namespace,
+        "input_name": base_name,
+        "input_lines": lines,
+        "input": input,
+        "warnings": warnings,
+        "indent": "\t",
+        "bare": args.bare,
+        "output": output,
+        "native": native,
+        "overridden_types": overridden_types,
+        }
 
+def translate_modules(modules, args, output, overridden_types):
+    imports = []
+    for module in  modules:
+        for type, file in module.files():
+            if type == "js":
+                with open(file, "r") as f:
+                    output.write(f.read())
+            elif type == "py":
+                config = get_py_config(args, file, output, overridden_types)
+                file_imports = translate_file(config)
+                for imp in file_imports:
+                    imports.append(imp)
+            else:
+                raise ValueError("type %s is not supported for file %s" % (type % file))
+    return imports
 
+def generate_base(out):
+    #used_modules = walk_imports(import_names, available_modules)
+    pass
+
+def generate_imports(args, out, import_names, available_modules, overridden_types):
+    used_modules = walk_imports(import_names, available_modules)
+    for name, module in used_modules.items():
+        sys.stderr.write("generating %s" % name)
+        translate_modules([module], args, out, overridden_types)
+
+def translate_and_get_imports(args, output, overridden_types):
+    return translate_modules(files_to_modules(args.files), args, output, overridden_types)
+
+def show_parse_error(e):
+    if e.lineno is not None:
+        sys.stderr.write("%-6s  " % "")
+        sys.stderr.write("file '%s' line %d column %d:\n" %  (e.input_name, e.lineno, e.col_offset))
+        lines = e.input_lines
+        end_line = e.lineno
+        start_line = e.lineno - 5
+        if start_line < 0:
+            start_line = 0
+        for i in range(start_line, end_line):
+            sys.stderr.write("%-6d: %s" % (i+1, lines[i]))
+        sys.stderr.write("%-6s  " % "")
+        for i in range(0, e.col_offset):
+            sys.stderr.write(" ")
+        sys.stderr.write("^\n")
+    sys.stderr.write(str(e))
+    sys.stderr.write("\n")
 
 def main(argv=sys.argv[1:]):
     parser = construct_parser()
-    out_files = []
     args = parser.parse_args(argv)
-
+    providers = all_providers()
+    modules = dict([ (n,m) for p in providers for n,m in p.get_modules().items()])
+    overridden_types = dict([ (n,f) for p in providers for n,f in p.get_overridden_types().items()])
     try:
-        for config in process(parser, args, out_files):
-            try:
-                translate_file(config)
-            except ParseError as e:
-                if e.lineno is not None:
-                    sys.stderr.write("%-6s  " % "")
-                    sys.stderr.write("file '%s' line %d column %d:\n" %  (config["input_name"], e.lineno, e.col_offset))
-                    lines = config["input_lines"]
-                    endline = e.lineno
-                    startline = e.lineno - 5
-                    if startline < 0:
-                        startline = 0
-                    for i in range(startline, endline):
-                        sys.stderr.write("%-6d: %s" % (i+1, lines[i]))
-                    sys.stderr.write("%-6s  " % "")
-                    for i in range(0, e.col_offset):
-                        sys.stderr.write(" ")
-                    sys.stderr.write("^\n")
-                sys.stderr.write(str(e))
-                sys.stderr.write("\n")
-                return 1
-    finally:
-        for out_file in out_files:
-            if isinstance(out_file, FileBuffer):
-                if out_file.filename is None:
-                    f = sys.stdout
-                else:
-                    f = open(out_file.filename, "w")
-                f.write(beautify(out_file.getvalue()))
-                f.close()
+        translate_out = StringIO() if args.generate_result else open(os.devnull, "w")
+        imports = translate_and_get_imports(args, translate_out, overridden_types)
+        if args.generate_base:
+            generate_base(args.output)
+        if args.generate_imports:
+            generate_imports(args, args.output, imports, modules, overridden_types)
+        if args.generate_result:
+            result = translate_out.getvalue()
+            if args.beautify:
+                result = beautify(result)
+            args.output.write(result)
+        for imp in imports:
+            print imp
+    except ParseError as e:
+        show_parse_error(e)
+        return 1
 
+    return 0
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]) or 0)

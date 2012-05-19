@@ -29,6 +29,7 @@
 # No kwargs.
 #
 from logilab.astng import nodes as ast, builder, scoped_nodes
+from logilab.astng.exceptions import UnresolvableName
 from logilab.astng.utils import ASTWalker
 
 import simplejson, re, random
@@ -73,10 +74,11 @@ class Translator(ASTWalker):
         #"uSub":	("-", 4, False),
         #"UAdd": ("+", 4, False),
 
-        "&&":	("&&", 13, True),
-        "||":	("||", 14, True),
+        "and":	("&&", 13, True),
+        "or":	("||", 14, True),
 
         "not":	("!", 4, False),
+        "is not":	("!=", 4, False),
 
         "==":	("===", 9, True),
         "is":	("===", 9, True),
@@ -138,8 +140,13 @@ class Translator(ASTWalker):
         self.out = config["output"]
         self.namespace = config["namespace"]
         self.__warnings = config["warnings"]
-        self.use_throw_helper = "use_throw_helper" in config
         self.bare = config["bare"]
+
+        self.use_throw_helper = "use_throw_helper" in config
+        if "overridden_types" in config:
+            self.overridden_types = config["overridden_types"]
+        else:
+            self.overridden_types = {}
 
         self.export_map = {}
         self.public_identifiers = []
@@ -243,7 +250,7 @@ class Translator(ASTWalker):
         from module import itema, itemb ->
             module1 = __import__('module'); itema = module1.itema; itemb = module.itemb;
         """
-        module = i.module
+        module = i.modname
         if i.level == 1:
             if module is None:
                 module = self.namespace
@@ -252,9 +259,9 @@ class Translator(ASTWalker):
         modulevarname = module if "." not in module else module[0:module.find(".")]
         modulevarname = self.curr_scope.generate_variable("_m_"+modulevarname)
         self.__write("%s = __import__('%s'); " % (modulevarname, module))
-        for name in i.names:
-            varname = name.asname if name.asname else name.name
-            self.__write("%s = %s.%s;  " % (varname, modulevarname, name.name))
+        for name,asname in i.names:
+            varname = asname if asname else name
+            self.__write("%s = %s.%s;  " % (varname, modulevarname, name))
 
     def visit_import(self, i):
         """
@@ -274,6 +281,41 @@ class Translator(ASTWalker):
                     varname = importname
             self.__write("%s = __import__('%s');" % (varname, importname))
 
+    def infer_call_type(self, func):
+        cls = self.curr_scope.class_context()
+        if isinstance(func, ast.Name):
+            if self.curr_scope.check_builtin_usage(func.name):
+                if func.name in Scope.BUILTINS_FUNC:
+                    return "Function"
+                else:
+                    return "Class"
+        elif isinstance(func, ast.Getattr):
+            if cls is not None and isinstance(func.expr, ast.CallFunc) and isinstance(func.expr.func, ast.Name) :
+                if func.expr.func.name == "super":
+                    return "Function"
+
+        is_class = False
+        is_func = False
+        try:
+            for inferred in func.infer():
+                qname = inferred.qname()
+                if qname in self.overridden_types:
+                    return self.overridden_types[qname]
+                if isinstance(inferred, ast.Class):
+                    is_class = True
+                elif isinstance(inferred, ast.Function):
+                    is_func = True
+        except UnresolvableName:
+            return None
+
+        if is_class and is_func:
+            return None
+        if is_class:
+            return "Class"
+        if is_func:
+            return "Function"
+        return None
+
     def visit_callfunc(self, c):
         """
         Translates a function/method call or class instantiation.
@@ -282,35 +324,23 @@ class Translator(ASTWalker):
 
         cls = self.curr_scope.class_context()
 
-        type = None
+        type = self.infer_call_type(c.func)
         name = None
         call_type = None
         method_written = False
         if isinstance(c.func, ast.Name):
+            call_type = "name"
             if c.func.name == "JS":
                 if len(c.args) != 1:
                     raise ParseError("native js only accept one argument", c.lineno, c.col_offset)
-                if not isinstance(c.args[0], ast.Str):
+                if not isinstance(c.args[0], ast.Const) and not isinstance(c.args[0].value, str):
                     raise ParseError("native js only accept string",c.lineno, c.col_offset)
-                self.__write(re.sub(r'(?:@{{[!]?)([^}}]*)(?:}})', r"\1",c.args[0].s))
+                self.__write(re.sub(r'(?:@{{[!]?)([^}}]*)(?:}})', r"\1",c.args[0].value))
                 return
-
-            call_type = "name"
-            if self.curr_scope.check_builtin_usage(c.func.name):
-                if c.func.name in Scope.BUILTINS_FUNC:
-                    type = "Function"
-                else:
-                    type = "Class"
-            else:
-                # Look in current context
-                type = getattr(self.curr_scope.lookup(c.func.name), "type", None)
-                name = c.func.name
         elif isinstance(c.func, ast.Getattr):
-            call_type = "attr"
-            name = "."+c.func.attrname
+            call_type = "getattr"
             if cls is not None and isinstance(c.func.expr, ast.CallFunc) and isinstance(c.func.expr.func, ast.Name) :
-                name = c.func.value.func.name+name
-                if c.func.value.func.name == "super":
+                if c.func.expr.func.name == "super":
                     # A super call
                     if (not len(c.func.expr.args) == 2):
                         self.raise_error("Only python 2 simple super supported", c)
@@ -318,53 +348,6 @@ class Translator(ASTWalker):
                     self.__write("%s(" % self.get_util_var_name("_super", "%s.helpers.super" % self.LIB_NAME))
                     self.__write("this, '%s')" %  attrname)
                     method_written = True
-                    type = "Function"
-            elif isinstance(c.func.expr, ast.Name) and c.func.expr.name == "self":
-                # Look in Class context
-                if cls is not None:
-                    type = getattr(cls.child(c.func.attr), "type", None)
-            else:
-                # Create attribute chain
-                attrlst = [c.func.attrname]
-                value = c.func.expr
-                while isinstance(value, ast.Getattr):
-                    name = value.attrname+name
-                    attrlst.append(value.attrname)
-                    value = value.expr
-                if isinstance(value, ast.Name): # The last value must be a Name
-                    name = value.name+name
-                    ctx = self.curr_scope.lookup(value.name)
-                    while ctx is not None: # Walk up
-                        ctx = ctx.child(attrlst.pop())
-                        if ctx is not None and len(attrlst) == 0: # Win
-                            type = ctx.type
-                            break
-                    if type is None:
-                            imports = self.curr_scope.all_imports()
-                            if value.name in imports:
-                                importname, varname = imports[value.name]
-                                try:
-                                    __import__(importname)
-                                    obj = sys.modules[importname]
-                                    if varname is not None: obj = getattr(obj, varname)
-                                    attrError = False
-                                    for attr in reversed(attrlst):
-                                        try:
-                                            obj = getattr(obj, attr)
-                                        except AttributeError:
-                                            print "attr error"
-                                            attrError = True
-                                            break
-                                    if not attrError:
-                                        if inspect.isfunction(obj) or inspect.ismethod(obj):
-                                            type = "Function"
-                                        elif inspect.isclass(obj):
-                                            type = "Class"
-                                except AttributeError:
-                                    print "attr after import error"
-                                except ImportError:
-                                    print "import error"
-
 
         if type is None and "type" in self.__warnings:
             sys.stderr.write(" Warning: Cannot infer type [ call: %s, name: %s ] in line %s\n" % (call_type, name, c.lineno ))
@@ -394,11 +377,7 @@ class Translator(ASTWalker):
         None -> null
 
         """
-        if n.name == "True" or n.name == "False":
-            self.__write(n.name.lower())
-        elif n.name == "None":
-            self.__write("null")
-        elif n.name in self.RESERVED_WORDS:
+        if n.name in self.RESERVED_WORDS:
             if not n.name in self.translated_names:
                 self.translated_names[n.name] = self.mod_scope.generate_variable("__keyword_"+n.name)
             self.__write(self.translated_names[n.name])
@@ -451,7 +430,7 @@ class Translator(ASTWalker):
         """
         self.__write(self.__get_op(o.op))
         prec, assoc = self.__get_expr_pa(o.operand)
-        if isinstance(o.operand, ast.Num): prec = 3
+        if isinstance(o.operand, ast.Const): prec = 3
         if prec > 2: self.__write("(")
         self.visit(o.operand)
         if prec > 2: self.__write(")")
@@ -623,14 +602,14 @@ class Translator(ASTWalker):
 
         """
         self.visit(a.target)
-        if isinstance(a.value, ast.Num) and a.value.n == 1:
+        if isinstance(a.value, ast.Const) and a.value == 1:
             if isinstance(a.op, ast.Add):
                 self.__write("++")
                 return
             elif isinstance(a.op, ast.Sub):
                 self.__write("--")
                 return
-        self.__write(" %s= " % (self.__get_op(a.op)))
+        self.__write(" %s= " % (self.__get_op(a.op[:-1])))
         self.visit(a.value)
 
     def visit_for(self, f):
@@ -753,7 +732,7 @@ class Translator(ASTWalker):
             self.__write_docstring(f.doc)
 
         # Declaration
-        self.__write("%s = function (" % (f.name))
+        self.__write("%s = function (" % f.name)
 
         # Parse arguments
         self.__parse_args(f.args, is_method and not is_static)
@@ -837,7 +816,6 @@ class Translator(ASTWalker):
         f = lc.generators[0]
 
         is_tuple = False
-        iter_var = None
 
         if isinstance(f.target, ast.AssName):
             iter_var = f.target.name
@@ -879,14 +857,14 @@ class Translator(ASTWalker):
 
 
     def visit_raise(self, r):
-        type = self.exe_node(r.type)
+        exc = self.exe_node(r.exc)
 
         if self.use_throw_helper:
             throw = self.get_util_var_name("_throw", "%s.helpers.throw" %self.LIB_NAME)
             file = self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
-            self.__write("%s(%s, %s, %d)"% (throw, type, file, r.lineno))
+            self.__write("%s(%s, %s, %d)"% (throw, exc, file, r.lineno))
         else:
-            self.__write("throw %s" % type)
+            self.__write("throw %s" % exc)
 
     def visit_print(self, p):
         """
@@ -905,6 +883,8 @@ class Translator(ASTWalker):
             self.__write(str(t.value).lower())
         elif isinstance(t.value, int) or isinstance(t.value, float):
             self.__write(str(t.value))
+        elif t.value is None:
+            self.__write("null")
         else:
             raise ValueError("const not recognized")
 
@@ -1221,7 +1201,7 @@ class Translator(ASTWalker):
             return (1, False)
         elif name == "IfExp":
             return (15, False)
-        elif name in ("GetAttr", "Subscript"):
+        elif name in ("Getattr", "Subscript"):
             return (1, True)
         elif name in ("CallFunc", "Repr"):
             return (2, True)
@@ -1382,13 +1362,18 @@ def translate_file(config):
     config["use_throw_helper"] = True
     try:
         tree = builder.ASTNGBuilder().string_build(config["input"], config["input_name"])
+        scope_gen = PyScopeGenerator(config["namespace"], tree)
+        scope_gen.visit(tree)
+
+        moo = Translator(scope_gen.root_scope, config)
+        moo.visit(tree)
+        return scope_gen.root_scope.imported_modules()
+    except ParseError as e:
+        e.input_lines = config["input_lines"]
+        e.input_name = config["input_name"]
+        raise e
     except SyntaxError as e:
-        raise ParseError(e.msg, e.lineno, e.offset, True)
+        raise ParseError(e.msg, e.lineno, e.offset, True, config["input_lines"], config["input_name"])
 
-    scope_gen = PyScopeGenerator(config["namespace"], tree)
-    scope_gen.visit(tree)
-
-    moo = Translator(scope_gen.root_scope, config)
-    moo.visit(tree)
 
 

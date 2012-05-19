@@ -1,0 +1,16 @@
+single python file:
+    path: file.py
+    if exists file_native.js
+        native appended after import statements
+    base_namespace
+
+single javascript file:
+    path: file.js
+
+directory:
+    path: directory
+    base_namespace
+    children listed in [child config of children directory]
+    it is a list of python file, javascript file, or another directory
+        path will be
+

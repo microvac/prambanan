@@ -104,12 +104,14 @@ class PyScopeGenerator(ASTWalker):
 
     def visit_from(self, i):
         self.current_scope.use_builtin("__import__")
-        module = i.module
-        if i.level == 1:
-            if module is None:
+        module = i.modname
+        level = i.level
+        while level > 0:
+            if module == "":
                 module = self.namespace
             else:
                 module = self.namespace+"."+module
+            level -= 1
         for name,asname in i.names:
             varname = asname if asname else name
             self.current_scope.declare_variable(varname)
@@ -132,7 +134,7 @@ class PyScopeGenerator(ASTWalker):
     def visit_print(self, p):
         self.current_scope.use_builtin("print")
 
-    def visit_call(self, node):
+    def visit_callfunc(self, node):
         for arg in node.args:
             self.visit(arg)
 
@@ -151,6 +153,9 @@ class PyScopeGenerator(ASTWalker):
         self.visit_body(w)
 
     def visit_expr(self, expr):
+        self.visit(expr.value)
+
+    def visit_discard(self, expr):
         self.visit(expr.value)
 
     def visit_body(self, node):
