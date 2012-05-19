@@ -14,7 +14,7 @@ eggs
 pip-log.txt
 .installed-c
 
-test/translate/*
-test/sandbox/*
-test/template/*
-test/output/gen/*
+**/test/translate/*
+**/test/sandbox/*
+**/test/template/*
+**/test/output/gen/*
