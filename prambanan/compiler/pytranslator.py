@@ -305,7 +305,7 @@ class Translator(ASTWalker):
                     is_class = True
                 elif isinstance(inferred, ast.Function):
                     is_func = True
-        except UnresolvableName:
+        except UnresolvableName, InferenceError:
             return None
 
         if is_class and is_func:
@@ -361,7 +361,12 @@ class Translator(ASTWalker):
         self.__write(")")
 
     def visit_assname(self, n):
-        self.visit_name(n)
+        if n.name in self.RESERVED_WORDS:
+            if not n.name in self.translated_names:
+                self.translated_names[n.name] = self.mod_scope.generate_variable("__keyword_"+n.name)
+            self.__write(self.translated_names[n.name])
+        else:
+            self.__write(n.name)
 
     def visit_delname(self, n):
         pass
@@ -377,12 +382,8 @@ class Translator(ASTWalker):
         None -> null
 
         """
-        if n.name in self.RESERVED_WORDS:
-            if not n.name in self.translated_names:
-                self.translated_names[n.name] = self.mod_scope.generate_variable("__keyword_"+n.name)
-            self.__write(self.translated_names[n.name])
-        else:
-            self.__write(n.name)
+        self.curr_scope.check_builtin_usage(n.name)
+        self.visit_assname(n)
 
     def visit_binop(self, o):
         """
@@ -773,13 +774,15 @@ class Translator(ASTWalker):
             if handler.type is not None:
                 if has_first:
                     self.__write("else ")
-                if(isinstance(handler.type, ast.AssAttr) or isinstance(handler.type, ast.Name)):
+                if(isinstance(handler.type, ast.Getattr) or isinstance(handler.type, ast.Name)):
                     self.__write("if (%s instanceof %s){" %(ex_var, self.exe_node(handler.type)))
                 elif(isinstance(handler.type, ast.Tuple)):
                     self.__write("if (%s){" % self.exe_first_differs(handler.type.elts,
                         rest_text="||",
                         do_visit=lambda elt: self.__write("(%s instanceof %s)" % (ex_var, self.exe_node(elt)))
                     ))
+                else:
+                    self.raise_error("handler type not recognized %s" % handler.type.__class__.name, handler.type)
                 has_if = has_first = True
             else:
                 has_catch_all = True
@@ -1114,11 +1117,16 @@ class Translator(ASTWalker):
             for i in xrange(len(args.defaults)):
                 get_arg = self.get_util_var_name("_get_arg", ("%s.helpers.get_arg" % self.LIB_NAME))
                 arg_name = self.exe_node(args.args[first+i])
-                self.__write("%s = %s(%d, \"%s\", %s, %s);" % (arg_name, get_arg, first+i, arg_name, args_name, self.exe_node(args.defaults[i])))
+                index = first + i;
+                if strip_first:
+                    index -= 1
+                self.__write("%s = %s(%d, \"%s\", %s, %s);" % (arg_name, get_arg, index, arg_name, args_name, self.exe_node(args.defaults[i])))
 
         if args.vararg is not None:
             get_varargs = self.get_util_var_name("_get_varargs", ("%s.helpers.get_varargs" % self.LIB_NAME))
             index = len(args.args)
+            if strip_first:
+                index -= 1
             self.__write("%s = %s(%d, %s);" % (args.vararg, get_varargs, index, args_name))
 
         if args.kwarg is not None:
@@ -1239,7 +1247,8 @@ class Translator(ASTWalker):
                     first = False
                 else:
                     self.__write(", ")
-                self.__write(variable)
+                name = self.translated_names.get(variable, variable)
+                self.__write(name)
             self.__write(";")
 
 

@@ -198,6 +198,12 @@
                 return false;
             return _isSubClass(obj.constructor, cls);
         },
+        in: function(item, col){
+            if (_.isArray(col)){
+                return _.contains(col, item)
+            }
+            return _.has(col, item)
+        },
         make_kwargs: function(items){
             return new KwArgs(items);
         },
@@ -261,7 +267,9 @@
         any: function(l){
             return _.any(l, function(c){return c === true; })
         },
-        len: _.size,
+        len: function(obj){
+            return _.isArray(obj) || _.isString(obj) ? obj.length : _.keys(obj).length;
+        },
         reverse: function (a) {
             return a.reverse();
         },
@@ -355,12 +363,15 @@
 
     function t_object(){this.__init__.apply(this, arguments)}
     var object = builtins.object = t_object;
-    object.prototype.toString = function(){
-        if(this.__str__)
-            return this.__str__();
-        else
-            return Object.prototype.toString.call(this);
-    }
+    _.extend(object.prototype, {
+        toString: function(){
+            if(this.__str__)
+                return this.__str__();
+            else
+                return Object.prototype.toString.call(this);
+        },
+        __init__: function(){}
+    })
     object.extend = Backbone.Model.extend;
     prambanan.exports("__builtin__", builtins);
 
@@ -627,6 +638,15 @@
             },
             endswith: function (s) {
                 return this.slice(this.length-s.length) == s;
+            },
+            join: function(col){
+                result = "";
+                for (var i = 0; i < col.length; i++){
+                    result+=col[i];
+                    if(i != col.length - 1)
+                        result+=this;
+                }
+                return result;
             }
         });
         prambanan.patch(name);
