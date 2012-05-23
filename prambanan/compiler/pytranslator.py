@@ -136,19 +136,17 @@ class Translator(ASTWalker):
 
         self.writer_stack = []
 
-        self.input_name = config["input_name"]
         self.input_lines = config["input_lines"]
         self.out = config["output"]
-        self.namespace = config["namespace"]
-        self.__warnings = config["warnings"]
-        self.bare = config["bare"]
+
+        self.input_name = config.get("input_name", "")
+        self.namespace = config.get("namespace", "")
+        self.__warnings = config.get("warnings", {})
+        self.bare = config.get("bare", False)
         self.translator = config.get("translator", gettext.NullTranslations().gettext)
 
-        self.use_throw_helper = "use_throw_helper" in config
-        if "overridden_types" in config:
-            self.overridden_types = config["overridden_types"]
-        else:
-            self.overridden_types = {}
+        self.use_throw_helper = config.get("use_throw_helper", False)
+        self.overridden_types = config.get("overridden_types", {})
 
         self.export_map = {}
         self.public_identifiers = []
@@ -1361,7 +1359,6 @@ def translate_string(input,namespace=""):
 
 
 def translate_file(config):
-    config["use_throw_helper"] = True
     try:
         tree = builder.ASTNGBuilder().string_build(config["input"], config["input_name"])
         scope_gen = PyScopeGenerator(config["namespace"], tree)
