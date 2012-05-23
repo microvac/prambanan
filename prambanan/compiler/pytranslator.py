@@ -32,6 +32,7 @@ from logilab.astng import nodes as ast, builder, scoped_nodes
 from logilab.astng.exceptions import UnresolvableName
 from logilab.astng.utils import ASTWalker
 
+import gettext
 import simplejson, re, random
 from StringIO import StringIO
 import inspect
@@ -141,6 +142,7 @@ class Translator(ASTWalker):
         self.namespace = config["namespace"]
         self.__warnings = config["warnings"]
         self.bare = config["bare"]
+        self.translator = config.get("translator", gettext.NullTranslations().gettext)
 
         self.use_throw_helper = "use_throw_helper" in config
         if "overridden_types" in config:
@@ -878,7 +880,7 @@ class Translator(ASTWalker):
 
     def visit_const(self, t):
         if isinstance(t.value, str):
-            self.__write(simplejson.dumps(t.value))
+            self.__write(simplejson.dumps(self.translator(t.value)))
         elif isinstance(t.value, bool):
             self.__write(str(t.value).lower())
         elif isinstance(t.value, int) or isinstance(t.value, float):

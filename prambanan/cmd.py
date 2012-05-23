@@ -2,6 +2,8 @@ from StringIO import StringIO
 import os
 import sys
 import argparse
+import gettext
+import pkg_resources
 
 from collections import OrderedDict
 
@@ -36,6 +38,17 @@ def construct_parser():
     parser.add_argument("-n", "--namespace", dest="base_namespace",
         default = "", type=str,
         help="base export namespace, something that appends to filename")
+
+    parser.add_argument("-l", "--locale-languange", dest="locale_language",
+        default = None, type=str,
+        help="target languange")
+    parser.add_argument("--locale-domain", dest="locale_domain",
+        default = None, type=str,
+        help="locale domain, default=as namespace")
+    parser.add_argument("--locale-dir", dest="locale_dir",
+        default = None, type=str,
+        help="locale directory default = pkg_resource of namespace")
+
     parser.add_argument("--no-wrap", action="store_true", dest="bare",
         help="don't wrap result")
     parser.add_argument("--no-beautify", action="store_false", dest="beautify",
@@ -85,6 +98,27 @@ def get_py_config(args, filename, output, overridden_types):
     name, ext = os.path.splitext(base_name)
     namespace = name if base_namespace == "" else "%s.%s" % (base_namespace, name)
 
+    translator = None
+    if args.locale_language is not None:
+        lang = args.locale_language
+        locale_domain = args.locale_domain
+        locale_dir = args.locale_dir
+        if locale_domain is None:
+            locale_domain = namespace
+        if locale_dir is None:
+            try:
+                locale_dir = pkg_resources.resource_filename(locale_domain, "locale/")
+            except ImportError:
+                pass
+        if locale_dir is not None:
+            try:
+                translator = gettext.translation(locale_domain, locale_dir, [lang]).gettext
+            except IOError:
+                pass
+
+    if translator is None:
+        translator = gettext.NullTranslations().gettext
+
     with open(filename, 'r') as f:
         lines = f.readlines()
     input = StringIO("".join(lines)).read()
@@ -108,6 +142,7 @@ def get_py_config(args, filename, output, overridden_types):
         "output": output,
         "native": native,
         "overridden_types": overridden_types,
+        "translator": translator,
         }
 
 def translate_modules(modules, args, output, overridden_types):
