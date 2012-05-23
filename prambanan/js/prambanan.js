@@ -8,13 +8,14 @@
      */
     _.extend(prambanan, (function(){
         var modules = {};
+        function Module(){};
         var dotNotateModule = function(s){
             var splitted = s.split(".");
             var current = modules;
             for(var i = 0; i < splitted.length; i++){
                 var key = splitted[i];
                 if(_.isUndefined(modules[key])){
-                    modules[key] = {}
+                    modules[key] = new Module();
                 }
                 current = modules[key];
             }
@@ -27,7 +28,7 @@
                 return dotNotateModule(ns);
             },
             exports: function(ns, values){
-                m = dotNotateModule(ns);
+                var m = dotNotateModule(ns);
                 for(key in values){
                     m[key] = values[key];
                 }
@@ -189,7 +190,8 @@
                 instance_attrs[prop] = all_attrs[prop];
                 static_attrs[prop] = all_attrs[prop];
             }
-            return builtins.type(ctor, bases, instance_attrs, static_attrs);
+            var creator = all_attrs.__metaclass__ || bases[0].prototype.__metaclass__ || builtins.type;
+            return creator(ctor, bases, instance_attrs, static_attrs);
         },
         isinstance : function (obj, cls){
             if (obj instanceof cls)
@@ -502,131 +504,211 @@
         prambanan.patch(name);
     })();
 
-    (function(){
-        var name = "python.String";
+    function sprintf () {
+        // http://kevin.vanzonneveld.net
+        // +   original by: Ash Searle (http://hexmen.com/blog/)
+        // + namespaced by: Michael White (http://getsprink.com)
+        // +    tweaked by: Jack
+        // +   improved by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+        // +      input by: Paulo Freitas
+        // +   improved by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+        // +      input by: Brett Zamir (http://brett-zamir.me)
+        // +   improved by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+        // *     example 1: sprintf("%01.2f", 123.1);
+        // *     returns 1: 123.10
+        // *     example 2: sprintf("[%10s]", 'monkey');
+        // *     returns 2: '[    monkey]'
+        // *     example 3: sprintf("[%'#10s]", 'monkey');
+        // *     returns 3: '[####monkey]'
+        var regex = /%%|%(\d+\$)?([-+\'#0 ]*)(\*\d+\$|\*|\d+)?(\.(\*\d+\$|\*|\d+))?([scboxXuidfegEG])/g;
+        var a = arguments,
+            i = 0,
+            format = a[i++];
 
-        var sprintfWrapper = {
-            init : function () {
-                var string = arguments[0];
-                var exp = new RegExp(/(%([%]|(\-)?(\+|\x20)?(0)?(\d+)?(\.(\d)?)?([bcdfosxX])))/g);
-                var matches = new Array();
-                var strings = new Array();
-                var convCount = 0;
-                var stringPosStart = 0;
-                var stringPosEnd = 0;
-                var matchPosEnd = 0;
-                var newString = '';
-                var match = null;
-                var substitution = null;
+        // pad()
+        var pad = function (str, len, chr, leftJustify) {
+            if (!chr) {
+                chr = ' ';
+            }
+            var padding = (str.length >= len) ? '' : Array(1 + len - str.length >>> 0).join(chr);
+            return leftJustify ? str + padding : padding + str;
+        };
 
-                while ((match = exp.exec(string))) {
-                    if (match[9])
-                        convCount += 1;
-
-                    stringPosStart = matchPosEnd;
-                    stringPosEnd = exp.lastIndex - match[0].length;
-                    strings[strings.length] = string.substring(stringPosStart, stringPosEnd);
-
-                    matchPosEnd = exp.lastIndex;
-                    matches[matches.length] = {
-                        match: match[0],
-                        left: match[3] ? true : false,
-                        sign: match[4] || '',
-                        pad: match[5] || ' ',
-                        min: match[6] || 0,
-                        precision: match[8],
-                        code: match[9] || '%',
-                        negative: parseInt(arguments[convCount]) < 0 ? true : false,
-                        argument: String(arguments[convCount])
-                    };
-                }
-                strings[strings.length] = string.substring(matchPosEnd);
-
-                if (matches.length == 0)
-                    return string;
-
-                var code = null;
-                var match = null;
-                var i = null;
-
-                for (i=0; i<matches.length; i++) {
-                    if (matches[i].code == '%') { substitution = '%' }
-                    else if (matches[i].code == 'b') {
-                        matches[i].argument = String(Math.abs(parseInt(matches[i].argument)).toString(2));
-                        substitution = sprintfWrapper.convert(matches[i], true);
-                    }
-                    else if (matches[i].code == 'c') {
-                        matches[i].argument = String(String.fromCharCode(parseInt(Math.abs(parseInt(matches[i].argument)))));
-                        substitution = sprintfWrapper.convert(matches[i], true);
-                    }
-                    else if (matches[i].code == 'd') {
-                        matches[i].argument = String(Math.abs(parseInt(matches[i].argument)));
-                        substitution = sprintfWrapper.convert(matches[i]);
-                    }
-                    else if (matches[i].code == 'f') {
-                        matches[i].argument = String(Math.abs(parseFloat(matches[i].argument)).toFixed(matches[i].precision ? matches[i].precision : 6));
-                        substitution = sprintfWrapper.convert(matches[i]);
-                    }
-                    else if (matches[i].code == 'o') {
-                        matches[i].argument = String(Math.abs(parseInt(matches[i].argument)).toString(8));
-                        substitution = sprintfWrapper.convert(matches[i]);
-                    }
-                    else if (matches[i].code == 's') {
-                        matches[i].argument = matches[i].argument.substring(0, matches[i].precision ? matches[i].precision : matches[i].argument.length)
-                        substitution = sprintfWrapper.convert(matches[i], true);
-                    }
-                    else if (matches[i].code == 'x') {
-                        matches[i].argument = String(Math.abs(parseInt(matches[i].argument)).toString(16));
-                        substitution = sprintfWrapper.convert(matches[i]);
-                    }
-                    else if (matches[i].code == 'X') {
-                        matches[i].argument = String(Math.abs(parseInt(matches[i].argument)).toString(16));
-                        substitution = sprintfWrapper.convert(matches[i]).toUpperCase();
-                    }
-                    else {
-                        substitution = matches[i].match;
-                    }
-
-                    newString += strings[i];
-                    newString += substitution;
-                }
-
-                newString += strings[i];
-                return newString;
-            },
-            convert : function(match, nosign){
-                if (nosign)
-                    match.sign = '';
-                else
-                    match.sign = match.negative ? '-' : match.sign;
-
-                var l = match.min - match.argument.length + 1 - match.sign.length;
-                var pad = new Array(l < 0 ? 0 : l).join(match.pad);
-                if (!match.left) {
-                    if (match.pad == "0" || nosign)
-                        return match.sign + pad + match.argument;
-                    else
-                        return pad + match.sign + match.argument;
+        // justify()
+        var justify = function (value, prefix, leftJustify, minWidth, zeroPad, customPadChar) {
+            var diff = minWidth - value.length;
+            if (diff > 0) {
+                if (leftJustify || !zeroPad) {
+                    value = pad(value, minWidth, customPadChar, leftJustify);
                 } else {
-                    if (match.pad == "0" || nosign)
-                        return match.sign + match.argument + pad.replace(/0/g, ' ');
-                    else
-                        return match.sign + match.argument + pad;
+                    value = value.slice(0, prefix.length) + pad('', diff, '0', true) + value.slice(prefix.length);
                 }
+            }
+            return value;
+        };
+
+        // formatBaseX()
+        var formatBaseX = function (value, base, prefix, leftJustify, minWidth, precision, zeroPad) {
+            // Note: casts negative numbers to positive ones
+            var number = value >>> 0;
+            prefix = prefix && number && {
+                '2': '0b',
+                '8': '0',
+                '16': '0x'
+            }[base] || '';
+            value = prefix + pad(number.toString(base), precision || 0, '0', false);
+            return justify(value, prefix, leftJustify, minWidth, zeroPad);
+        };
+
+        // formatString()
+        var formatString = function (value, leftJustify, minWidth, precision, zeroPad, customPadChar) {
+            if (precision != null) {
+                value = value.slice(0, precision);
+            }
+            return justify(value, '', leftJustify, minWidth, zeroPad, customPadChar);
+        };
+
+        // doFormat()
+        var doFormat = function (substring, valueIndex, flags, minWidth, _, precision, type) {
+            var number;
+            var prefix;
+            var method;
+            var textTransform;
+            var value;
+
+            if (substring == '%%') {
+                return '%';
+            }
+
+            // parse flags
+            var leftJustify = false,
+                positivePrefix = '',
+                zeroPad = false,
+                prefixBaseX = false,
+                customPadChar = ' ';
+            var flagsl = flags.length;
+            for (var j = 0; flags && j < flagsl; j++) {
+                switch (flags.charAt(j)) {
+                    case ' ':
+                        positivePrefix = ' ';
+                        break;
+                    case '+':
+                        positivePrefix = '+';
+                        break;
+                    case '-':
+                        leftJustify = true;
+                        break;
+                    case "'":
+                        customPadChar = flags.charAt(j + 1);
+                        break;
+                    case '0':
+                        zeroPad = true;
+                        break;
+                    case '#':
+                        prefixBaseX = true;
+                        break;
+                }
+            }
+
+            // parameters may be null, undefined, empty-string or real valued
+            // we want to ignore null, undefined and empty-string values
+            if (!minWidth) {
+                minWidth = 0;
+            } else if (minWidth == '*') {
+                minWidth = +a[i++];
+            } else if (minWidth.charAt(0) == '*') {
+                minWidth = +a[minWidth.slice(1, -1)];
+            } else {
+                minWidth = +minWidth;
+            }
+
+            // Note: undocumented perl feature:
+            if (minWidth < 0) {
+                minWidth = -minWidth;
+                leftJustify = true;
+            }
+
+            if (!isFinite(minWidth)) {
+                throw new Error('sprintf: (minimum-)width must be finite');
+            }
+
+            if (!precision) {
+                precision = 'fFeE'.indexOf(type) > -1 ? 6 : (type == 'd') ? 0 : undefined;
+            } else if (precision == '*') {
+                precision = +a[i++];
+            } else if (precision.charAt(0) == '*') {
+                precision = +a[precision.slice(1, -1)];
+            } else {
+                precision = +precision;
+            }
+
+            // grab value using valueIndex if required?
+            value = valueIndex ? a[valueIndex.slice(0, -1)] : a[i++];
+
+            switch (type) {
+                case 's':
+                    return formatString(String(value), leftJustify, minWidth, precision, zeroPad, customPadChar);
+                case 'c':
+                    return formatString(String.fromCharCode(+value), leftJustify, minWidth, precision, zeroPad);
+                case 'b':
+                    return formatBaseX(value, 2, prefixBaseX, leftJustify, minWidth, precision, zeroPad);
+                case 'o':
+                    return formatBaseX(value, 8, prefixBaseX, leftJustify, minWidth, precision, zeroPad);
+                case 'x':
+                    return formatBaseX(value, 16, prefixBaseX, leftJustify, minWidth, precision, zeroPad);
+                case 'X':
+                    return formatBaseX(value, 16, prefixBaseX, leftJustify, minWidth, precision, zeroPad).toUpperCase();
+                case 'u':
+                    return formatBaseX(value, 10, prefixBaseX, leftJustify, minWidth, precision, zeroPad);
+                case 'i':
+                case 'd':
+                    number = (+value) | 0;
+                    prefix = number < 0 ? '-' : positivePrefix;
+                    value = prefix + pad(String(Math.abs(number)), precision, '0', false);
+                    return justify(value, prefix, leftJustify, minWidth, zeroPad);
+                case 'e':
+                case 'E':
+                case 'f':
+                case 'F':
+                case 'g':
+                case 'G':
+                    number = +value;
+                    prefix = number < 0 ? '-' : positivePrefix;
+                    method = ['toExponential', 'toFixed', 'toPrecision']['efg'.indexOf(type.toLowerCase())];
+                    textTransform = ['toString', 'toUpperCase']['eEfFgG'.indexOf(type) % 2];
+                    value = prefix + Math.abs(number)[method](precision);
+                    return justify(value, prefix, leftJustify, minWidth, zeroPad)[textTransform]();
+                default:
+                    return substring;
             }
         };
 
+        return format.replace(regex, doFormat);
+    }
+
+    (function(){
+        var name = "python.String";
+
         prambanan.registerPrototypePatch(name, String.prototype, {
             __mod__: function () {
-                args = Array.prototype.slice.call(arguments, 0);
+                var args = Array.prototype.slice.call(arguments, 0);
                 args.splice(0, 0, this);
-                return sprintfWrapper.init.apply(this, args);
+                return sprintf.apply(this, args);
             },
             startswith: function (s) {
                 return this.slice(0,s.length) == s;
             },
             endswith: function (s) {
                 return this.slice(this.length-s.length) == s;
+            },
+            reverse: function(){
+                var s = "";
+                var i = this.length;
+                while (i>0) {
+                    s += this.substring(i-1,i);
+                    i--;
+                }
+                return s;
             }
         });
         prambanan.patch(name);
