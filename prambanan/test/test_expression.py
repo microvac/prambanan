@@ -2,7 +2,7 @@ import unittest
 import os
 from StringIO import StringIO
 
-from prambanan.compiler.pytranslator import  translate_file
+from prambanan.compiler.translator import  translate_file
 from prambanan import jsbeautifier
 
 dir = os.path.dirname(os.path.realpath(__file__))

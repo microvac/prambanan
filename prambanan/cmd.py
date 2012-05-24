@@ -13,7 +13,7 @@ from prambanan.compiler import (
     PythonModule, files_to_modules
 )
 from prambanan.compiler.provider import all_providers
-from prambanan.compiler.pytranslator import translate_file
+from prambanan.compiler.translator import translate_file
 
 
 def usage(argv):

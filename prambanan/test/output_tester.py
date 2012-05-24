@@ -4,7 +4,7 @@ import subprocess
 import pkg_resources
 
 from StringIO import StringIO
-from prambanan.compiler.pytranslator import  translate_file
+from prambanan.compiler.translator import  translate_file
 from prambanan import jsbeautifier
 
 js_opt = jsbeautifier.BeautifierOptions()

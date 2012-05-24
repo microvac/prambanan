@@ -38,7 +38,7 @@ from StringIO import StringIO
 import inspect
 import sys
 
-from .pyscopegenerator import PyScopeGenerator
+from .scopegenerator import ScopeGenerator
 from .scope import Scope
 from . import ParseError, Writer
 
@@ -1350,7 +1350,7 @@ def translate_string(input,namespace=""):
     except SyntaxError as e:
         raise ParseError(e.msg, e.lineno, e.offset, True)
 
-    scope_gen = PyScopeGenerator(config["namespace"], tree)
+    scope_gen = ScopeGenerator(config["namespace"], tree)
 
     moo = Translator(scope_gen.root_scope, config)
     moo.visit(tree)
@@ -1361,7 +1361,7 @@ def translate_string(input,namespace=""):
 def translate_file(config):
     try:
         tree = builder.ASTNGBuilder().string_build(config["input"], config["input_name"])
-        scope_gen = PyScopeGenerator(config["namespace"], tree)
+        scope_gen = ScopeGenerator(config["namespace"], tree)
         scope_gen.visit(tree)
 
         moo = Translator(scope_gen.root_scope, config)

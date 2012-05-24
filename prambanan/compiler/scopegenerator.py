@@ -4,7 +4,7 @@ from scope import Scope
 from . import ParseError
 
 
-class PyScopeGenerator(ASTWalker):
+class ScopeGenerator(ASTWalker):
     """
     First-pass ast visitor. Builds a scope that registers variable, helper for type inference
     and captures docstrings.
