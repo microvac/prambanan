@@ -28,7 +28,7 @@
 #
 # No kwargs.
 #
-from logilab.astng import nodes as ast, builder, scoped_nodes
+from logilab.astng import nodes,  builder
 from logilab.astng.exceptions import UnresolvableName
 from logilab.astng.utils import ASTWalker
 
@@ -194,8 +194,8 @@ class Translator(ASTWalker):
             self.__write("%s = %s.%s;" % (k, self.LIB_NAME, v))
 
         for stmt in mod.body:
-            if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and\
-               isinstance(stmt.targets[0], ast.Name) and\
+            if isinstance(stmt, nodes.Assign) and len(stmt.targets) == 1 and\
+               isinstance(stmt.targets[0], nodes.Name) and\
                stmt.targets[0].name in ("__all__", "__license__"):
                 continue
             """
@@ -209,7 +209,7 @@ class Translator(ASTWalker):
                         public_identifiers.append(name)
 
             self.visit(stmt)
-            if( not isinstance(stmt, ast.Import) and not isinstance(stmt, ast.From) and not isinstance(stmt, ast.Pass)):
+            if( not isinstance(stmt, nodes.Import) and not isinstance(stmt, nodes.From) and not isinstance(stmt, nodes.Pass)):
                 self.__semicolon(stmt)
 
         if not self.bare:
@@ -283,14 +283,14 @@ class Translator(ASTWalker):
 
     def infer_call_type(self, func):
         cls = self.curr_scope.class_context()
-        if isinstance(func, ast.Name):
+        if isinstance(func, nodes.Name):
             if self.curr_scope.check_builtin_usage(func.name):
                 if func.name in Scope.BUILTINS_FUNC:
                     return "Function"
                 else:
                     return "Class"
-        elif isinstance(func, ast.Getattr):
-            if cls is not None and isinstance(func.expr, ast.CallFunc) and isinstance(func.expr.func, ast.Name) :
+        elif isinstance(func, nodes.Getattr):
+            if cls is not None and isinstance(func.expr, nodes.CallFunc) and isinstance(func.expr.func, nodes.Name) :
                 if func.expr.func.name == "super":
                     return "Function"
 
@@ -301,9 +301,9 @@ class Translator(ASTWalker):
                 qname = inferred.qname()
                 if qname in self.overridden_types:
                     return self.overridden_types[qname]
-                if isinstance(inferred, ast.Class):
+                if isinstance(inferred, nodes.Class):
                     is_class = True
-                elif isinstance(inferred, ast.Function):
+                elif isinstance(inferred, nodes.Function):
                     is_func = True
         except UnresolvableName:
             return None
@@ -328,18 +328,18 @@ class Translator(ASTWalker):
         name = None
         call_type = None
         method_written = False
-        if isinstance(c.func, ast.Name):
+        if isinstance(c.func, nodes.Name):
             call_type = "name"
             if c.func.name == "JS":
                 if len(c.args) != 1:
                     raise ParseError("native js only accept one argument", c.lineno, c.col_offset)
-                if not isinstance(c.args[0], ast.Const) and not isinstance(c.args[0].value, str):
+                if not isinstance(c.args[0], nodes.Const) and not isinstance(c.args[0].value, str):
                     raise ParseError("native js only accept string",c.lineno, c.col_offset)
                 self.__write(re.sub(r'(?:@{{[!]?)([^}}]*)(?:}})', r"\1",c.args[0].value))
                 return
-        elif isinstance(c.func, ast.Getattr):
+        elif isinstance(c.func, nodes.Getattr):
             call_type = "getattr"
-            if cls is not None and isinstance(c.func.expr, ast.CallFunc) and isinstance(c.func.expr.func, ast.Name) :
+            if cls is not None and isinstance(c.func.expr, nodes.CallFunc) and isinstance(c.func.expr.func, nodes.Name) :
                 if c.func.expr.func.name == "super":
                     # A super call
                     if (not len(c.func.expr.args) == 2):
@@ -391,8 +391,8 @@ class Translator(ASTWalker):
         and currently the only spot where tuples are allowed.
 
         """
-        if o.op == "%" and not (isinstance(o.left, ast.Const) and isinstance(o.left.value, int)):
-            args = self.exe_first_differs(o.right.elts, rest_text=",") if isinstance(o.right, ast.Tuple) else self.exe_node(o.right)
+        if o.op == "%" and not (isinstance(o.left, nodes.Const) and isinstance(o.left.value, int)):
+            args = self.exe_first_differs(o.right.elts, rest_text=",") if isinstance(o.right, nodes.Tuple) else self.exe_node(o.right)
             self.__write("%s.__mod__(%s)" % (self.exe_node(o.left), args))
         elif o.op == "**":
             pow_helper = self.get_util_var_name("_pow", "%s.helpers.pow" % self.LIB_NAME)
@@ -430,7 +430,7 @@ class Translator(ASTWalker):
         """
         self.__write(self.__get_op(o.op))
         prec, assoc = self.__get_expr_pa(o.operand)
-        if isinstance(o.operand, ast.Const): prec = 3
+        if isinstance(o.operand, nodes.Const): prec = 3
         if prec > 2: self.__write("(")
         self.visit(o.operand)
         if prec > 2: self.__write(")")
@@ -449,7 +449,7 @@ class Translator(ASTWalker):
                 self.__write("(")
 
             if remaining[0] > 1:
-                if not isinstance(expr, ast.Const) and not isinstance(expr, ast.Name):
+                if not isinstance(expr, nodes.Const) and not isinstance(expr, nodes.Name):
                     right_text = self.curr_scope.generate_variable("_op")
                     inits.append("%s = %s;"% (right_text, self.exe_node(expr)))
                 else:
@@ -492,7 +492,7 @@ class Translator(ASTWalker):
                     first = False
                 else:
                     self.__write(",")
-                if not isinstance(key, ast.Const):
+                if not isinstance(key, nodes.Const):
                     self.raise_error("Only numbers and string literals are allowed in dictionary expressions", key)
                 if isinstance(key.value, int):
                     self.__write("%d: " % (key.value))
@@ -511,21 +511,21 @@ class Translator(ASTWalker):
         """
 
         #   optimize simple index slice
-        if isinstance(s.parent, ast.Assign) or isinstance(s.parent, ast.Discard):# or isinstance(s.parent, ast.Load) or isinstance(s.parent, ast.Store) :
-            if isinstance(s.slice, ast.Index) and isinstance(s.slice.value, ast.Const) and s.slice.value.value >= 0:
+        if isinstance(s.parent, nodes.Assign) or isinstance(s.parent, nodes.Discard):# or isinstance(s.parent, ast.Load) or isinstance(s.parent, ast.Store) :
+            if isinstance(s.slice, nodes.Index) and isinstance(s.slice.value, nodes.Const) and s.slice.value.value >= 0:
                 s.simple = True
                 self.__write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
                 return
-            if isinstance(s.slice, ast.Index) and isinstance(s.slice.value, ast.Const) and isinstance(s.slice.value.value, str) :
+            if isinstance(s.slice, nodes.Index) and isinstance(s.slice.value, nodes.Const) and isinstance(s.slice.value.value, str) :
                 s.simple = True
                 self.__write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
                 return
 
         func = ""
         s.simple = True
-        if isinstance(s.parent, ast.Delete):
+        if isinstance(s.parent, nodes.Delete):
             func = "d"
-        elif isinstance(s.parent, ast.Assign) and s in s.parent.targets:
+        elif isinstance(s.parent, nodes.Assign) and s in s.parent.targets:
             func = "s"
             s.simple = False
         else:
@@ -534,10 +534,10 @@ class Translator(ASTWalker):
         subscript = self.get_util_var_name("_subscript", ("%s.helpers.subscript" % self.LIB_NAME))
         value = self.exe_node(s.value)
         with self.Executor() as args:
-            if isinstance(s.slice, ast.Index):
+            if isinstance(s.slice, nodes.Index):
                 type='i'
                 self.__write("%s" % ("null" if s.slice.value is None else self.exe_node(s.slice.value)))
-            elif isinstance(s.slice, ast.Slice):
+            elif isinstance(s.slice, nodes.Slice):
                 type="s"
                 self.__write("%s" % ("null" if s.slice.lower is None else self.exe_node(s.slice.lower)))
                 self.__write(", %s" % ("null" if s.slice.upper is None else self.exe_node(s.slice.upper)))
@@ -563,7 +563,7 @@ class Translator(ASTWalker):
         is_target_tuple = False
         tuple_target = None
         for target in a.targets:
-            if isinstance(target, ast.Tuple):
+            if isinstance(target, nodes.Tuple):
                 is_target_tuple = True
                 tuple_target = target
 
@@ -581,19 +581,19 @@ class Translator(ASTWalker):
         else:
             for target in a.targets:
                 self.visit(target)
-                if isinstance(target, ast.Subscript) and not target.simple:
+                if isinstance(target, nodes.Subscript) and not target.simple:
                     self.__write(", ")
                 else:
                     self.__write(" = ")
 
-        if isinstance(a.value, ast.Tuple):
+        if isinstance(a.value, nodes.Tuple):
             self.__write("[%s]" % self.exe_first_differs(a.value.elts, rest_text=","))
         else:
             self.visit(a.value)
 
         if is_target_tuple:
             self.__write(")")
-        if isinstance(target, ast.Subscript) and not target.simple:
+        if isinstance(target, nodes.Subscript) and not target.simple:
             self.__write(")")
 
     def visit_augassign(self, a):
@@ -602,11 +602,11 @@ class Translator(ASTWalker):
 
         """
         self.visit(a.target)
-        if isinstance(a.value, ast.Const) and a.value == 1:
-            if isinstance(a.op, ast.Add):
+        if isinstance(a.value, nodes.Const) and a.value == 1:
+            if isinstance(a.op, nodes.Add):
                 self.__write("++")
                 return
-            elif isinstance(a.op, ast.Sub):
+            elif isinstance(a.op, nodes.Sub):
                 self.__write("--")
                 return
         self.__write(" %s= " % (self.__get_op(a.op[:-1])))
@@ -621,7 +621,7 @@ class Translator(ASTWalker):
         len_var = self.curr_scope.generate_variable("_len")
         is_tuple = False
 
-        if isinstance(f.target, ast.AssName):
+        if isinstance(f.target, nodes.AssName):
             iter_var = f.target.name
         else:
             is_tuple = True
@@ -659,7 +659,7 @@ class Translator(ASTWalker):
         ctor_name = self.curr_scope.generate_variable("%s" % fullname, declared=False)
         self.__push_context(c.name)
 
-        bases = filter(lambda b: not isinstance(b, ast.Name) or b.name != "object", c.bases)
+        bases = filter(lambda b: not isinstance(b, nodes.Name) or b.name != "object", c.bases)
         if len(bases) > 0:
             bases_param = "[%s]" % self.exe_first_differs(bases, rest_text=", ")
         else:
@@ -684,7 +684,7 @@ class Translator(ASTWalker):
         # Instance member
         for stmt in c.body:
             exported.extend(self.__get_identifiers(stmt))
-            if isinstance(stmt, ast.Function):
+            if isinstance(stmt, nodes.Function):
                 decorators = self.__get_special_decorators(stmt)
                 if not "staticmethod" in decorators:
                     proto_only.append(stmt.name)
@@ -773,9 +773,9 @@ class Translator(ASTWalker):
             if handler.type is not None:
                 if has_first:
                     self.__write("else ")
-                if(isinstance(handler.type, ast.AssAttr) or isinstance(handler.type, ast.Name)):
+                if(isinstance(handler.type, nodes.AssAttr) or isinstance(handler.type, nodes.Name)):
                     self.__write("if (%s instanceof %s){" %(ex_var, self.exe_node(handler.type)))
-                elif(isinstance(handler.type, ast.Tuple)):
+                elif(isinstance(handler.type, nodes.Tuple)):
                     self.__write("if (%s){" % self.exe_first_differs(handler.type.elts,
                         rest_text="||",
                         do_visit=lambda elt: self.__write("(%s instanceof %s)" % (ex_var, self.exe_node(elt)))
@@ -817,7 +817,7 @@ class Translator(ASTWalker):
 
         is_tuple = False
 
-        if isinstance(f.target, ast.AssName):
+        if isinstance(f.target, nodes.AssName):
             iter_var = f.target.name
         else:
             is_tuple = True
@@ -935,7 +935,7 @@ class Translator(ASTWalker):
 
         """
         for target in d.targets:
-            if isinstance(target, ast.Subscript):
+            if isinstance(target, nodes.Subscript):
                 self.visit(target)
             else:
                 self.__write("delete %s" % self.exe_node(target))
@@ -983,7 +983,7 @@ class Translator(ASTWalker):
 
         """
         test = self.exe_node(i.test)
-        if isinstance(i.test, ast.Compare):
+        if isinstance(i.test, nodes.Compare):
             self.__write("".join(i.test.inits))
         self.__write("if ( %s ) { %s }" % (test, self.exe_body(i.body)))
         if len(i.orelse) > 0:
@@ -996,7 +996,7 @@ class Translator(ASTWalker):
 
         """
         test = self.exe_node(i.test)
-        if isinstance(i.test, ast.Compare):
+        if isinstance(i.test, nodes.Compare):
             if len(i.test.inits) > 0:
                 self.raise_error("if else node cannot have complicated multiple comparison", i)
         self.__write("%s ? %s : %s" % (test, self.exe_node(i.body), self.exe_node(i.orelse)))
@@ -1010,7 +1010,7 @@ class Translator(ASTWalker):
             self.raise_error("`else` branches of the `while` statement are not supported", w.orelse[0])
 
         test = self.exe_node(w.test)
-        if isinstance(w.test, ast.Compare):
+        if isinstance(w.test, nodes.Compare):
             self.__write("".join(w.test.inits))
 
         self.__write("while (%s){ %s }" % (test, self.exe_body(w.body)))
@@ -1040,7 +1040,7 @@ class Translator(ASTWalker):
             if (not first) or comma_first:
                 self.__write(", ")
             first = False
-            if isinstance(arg, ast.Keyword):
+            if isinstance(arg, nodes.Keyword):
                 make_kwargs = self.get_util_var_name("_make_kwargs", "%s.helpers.make_kwargs" % self.LIB_NAME)
                 kwargs = self.exe_first_differs(args.args[i:], rest_text=",",do_visit=lambda arg: self.__write("%s:%s" % (arg.arg, (self.exe_node(arg.value)))))
                 self.__write("%s({%s})" % (make_kwargs, kwargs))
@@ -1078,7 +1078,7 @@ class Translator(ASTWalker):
         first = True
         for arg in args.args:
             if first:
-                if strip_first and isinstance(arg, ast.Name):
+                if strip_first and isinstance(arg, nodes.Name):
                     strip_first = False
                     continue
                 first = False
@@ -1128,11 +1128,11 @@ class Translator(ASTWalker):
 
     def __get_identifiers(self, stmt):
         names = []
-        if isinstance(stmt, ast.Class) or isinstance(stmt, ast.Function):
+        if isinstance(stmt, nodes.Class) or isinstance(stmt, nodes.Function):
             names.append(stmt.name)
-        if isinstance(stmt, ast.Assign):
+        if isinstance(stmt, nodes.Assign):
             for target in stmt.targets:
-                if isinstance(target, ast.Name):
+                if isinstance(target, nodes.Name):
                     names.append(target.name)
         return names
 
@@ -1143,9 +1143,9 @@ class Translator(ASTWalker):
 
         """
         decorators = {}
-        if isinstance(stmt, ast.Function) and stmt.decorators is not None:
+        if isinstance(stmt, nodes.Function) and stmt.decorators is not None:
             for dec in stmt.decorators.nodes:
-                if isinstance(dec, ast.Name):
+                if isinstance(dec, nodes.Name):
                     if dec.name in ["staticmethod", "JSNoOp"] :
                         decorators[dec.name] = []
                         continue
@@ -1157,11 +1157,11 @@ class Translator(ASTWalker):
             return
 
         for dec in stmt.decorators.nodes:
-            if isinstance(dec, ast.Name):
+            if isinstance(dec, nodes.Name):
                 if dec.name in ["staticmethod", "JSNoOp"] :
                     continue
                 header = "%s" % dec.name
-            elif isinstance(dec, ast.CallFunc):
+            elif isinstance(dec, nodes.CallFunc):
                 with self.Executor() as call:
                     self.visit(dec.func)
                     self.__write("(")
@@ -1295,7 +1295,7 @@ class Translator(ASTWalker):
                 if skip_docstring and isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
                     continue # Skip docstring
                 """
-                if skip_global and isinstance(stmt, ast.Global): # The `global` statement is invisible
+                if skip_global and isinstance(stmt, nodes.Global): # The `global` statement is invisible
                     self.visit(stmt)
                     continue
                 self.visit(stmt)
@@ -1346,7 +1346,7 @@ def translate_string(input,namespace=""):
     config["use_throw_helper"] = False
 
     try:
-        tree = ast.parse(input)
+        tree = nodes.parse(input)
     except SyntaxError as e:
         raise ParseError(e.msg, e.lineno, e.offset, True)
 

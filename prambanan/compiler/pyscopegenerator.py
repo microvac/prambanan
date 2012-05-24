@@ -1,5 +1,5 @@
 from logilab.astng.utils import ASTWalker
-from logilab.astng import nodes as ast
+from logilab.astng import nodes
 from scope import Scope
 from . import ParseError
 
@@ -78,7 +78,7 @@ class PyScopeGenerator(ASTWalker):
 
     def visit_class(self, c):
         self.current_scope.declare_variable(c.name)
-        bases = filter(lambda b: not isinstance(b, ast.Name) or b.name != "object", c.bases)
+        bases = filter(lambda b: not isinstance(b, nodes.Name) or b.name != "object", c.bases)
         if len(bases) == 0:
             self.current_scope.use_builtin("object")
         self.visit_func_or_class(c)
@@ -93,9 +93,9 @@ class PyScopeGenerator(ASTWalker):
 
     def visit_listcomp(self, lc):
         for f in lc.generators:
-            if isinstance(f, ast.Name):
+            if isinstance(f, nodes.Name):
                 self.current_scope.declare_variable(f.target.name)
-            elif isinstance(f, ast.Tuple):
+            elif isinstance(f, nodes.Tuple):
                 for elt in f.target.elts:
                     self.current_scope.declare_variable(elt.name)
 
@@ -166,26 +166,26 @@ class PyScopeGenerator(ASTWalker):
 
     def visit_assign(self, stmt):
         if self.current_scope.type == "Module":
-            if len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
+            if len(stmt.targets) == 1 and isinstance(stmt.targets[0], nodes.Name):
                 if stmt.targets[0].name == "__all__":
-                    if not isinstance(stmt.value, ast.List):
+                    if not isinstance(stmt.value, nodes.List):
                         raise ParseError("Value of `__all__` must be a list expression",stmt.lineno, stmt.col_offset)
                     self.current_scope.module_all = []
                     for expr in stmt.value.elts:
-                        if not isinstance(expr, ast.Str):
+                        if not isinstance(expr, nodes.Str):
                             raise ParseError("All elements of `__all__` must be strings", expr.lineno, expr.col_offset)
                         self.current_scope.module_all.append(expr.s)
                 elif stmt.targets[0].name == "__license__":
-                    if not isinstance(stmt.value, ast.Str):
+                    if not isinstance(stmt.value, nodes.Str):
                         raise ParseError("Value of `__license__` must be a string",stmt.lineno, stmt.col_offset)
                     self.current_scope.module_license = stmt.value.s
 
         for target in stmt.targets:
-            if isinstance(target, ast.AssName):
+            if isinstance(target, nodes.AssName):
                 self.current_scope.declare_variable(target.name)
-            elif isinstance(target, ast.Tuple):
+            elif isinstance(target, nodes.Tuple):
                 for elt in target.elts:
-                    if isinstance(elt, ast.AssName):
+                    if isinstance(elt, nodes.AssName):
                         self.current_scope.declare_variable(elt.name)
 
         self.visit(stmt.value)
@@ -203,7 +203,7 @@ class PyScopeGenerator(ASTWalker):
         self.visit(node.value)
 
     def visit_for(self, f):
-        if isinstance(f.target, ast.AssName):
+        if isinstance(f.target, nodes.AssName):
             self.current_scope.declare_variable(f.target.name)
         else:
             for elt in f.target.elts:
