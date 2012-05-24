@@ -32,6 +32,8 @@ from logilab.astng import nodes,  builder
 from logilab.astng.exceptions import UnresolvableName
 from logilab.astng.utils import ASTWalker
 
+import utils
+
 import gettext
 import simplejson, re, random
 from StringIO import StringIO
@@ -44,114 +46,18 @@ from . import ParseError, Writer
 
 __all__ = ["translate_file", "translate_string"]
 
-class Translator(ASTWalker):
-    """
-    Second-pass main parser.
-
-    generated variable names:
-        Prambanan.in, Prambanan.subscript, Prambanan.undescore -> same
-        module in import from -> _m_
-        builtins -> same name
-        iterator -> _i, _source, _len, etc
-        ex -> _ex
-
-
-"""
-    OP_MAP = {
-        "+":	("+", 6, True), # chars, precedence, associates
-        "-":	("-", 6, True),
-        "*":	("*", 5, True),
-        "/":	("/", 5, True),
-        #floor div"/":	("/", 5, True),
-        "%":	("%", 5, True),
-        "**":	("", 5, True),
-        #"Pow":	?,
-        "<<":	("<<", 7, True),
-        ">>":	(">>", 7, True),
-        "|":	("|", 12, True),
-        "^":	("^", 11, True),
-        "&":	("&", 10, True),
-
-        #"uSub":	("-", 4, False),
-        #"UAdd": ("+", 4, False),
-
-        "and":	("&&", 13, True),
-        "or":	("||", 14, True),
-
-        "not":	("!", 4, False),
-        "is not":	("!=", 4, False),
-
-        "==":	("===", 9, True),
-        "is":	("===", 9, True),
-        "!=":("!==", 9, True),
-        "<":	("<", 8, True),
-        "<=":	("<=", 8, True),
-        ">":	(">", 8, True),
-        ">=":	(">=", 8, True),
-        }
-
-    NO_SEMICOLON = [
-        "Global",
-        "If",
-        "While",
-        "For",
-        "TryExcept",
-        "TryFinally",
-        "Pass",
-        ]
-
-    RESERVED_WORDS = [
-        "null",
-        "undefined",
-        "true",
-        "false",
-        "new",
-        "var",
-        "switch",
-        "case",
-        "function",
-        "this",
-        "default",
-        "throw",
-        "delete",
-        "instanceof",
-        "typeof",
-        ]
-
-
-    IDENTIFIER_RE = re.compile("^[A-Za-z_$][0-9A-Za-z_$]*$")
-
+class BufferedWriter(object):
     HEADER_BUFFER = "header"
     BODY_BUFFER = "body"
     FOOTER_BUFFER = "footer"
 
     BUFFER_NAMES = [HEADER_BUFFER, BODY_BUFFER, FOOTER_BUFFER]
 
-    LIB_NAME = "prambanan"
-
-    def __init__(self, scope, config):
-        ASTWalker.__init__(self, self)
-        self.mod_scope = scope
-        self.curr_scope = None
-
+    def __init__(self, config, visit):
         self.writer_stack = []
-
-        self.input_lines = config["input_lines"]
         self.out = config["output"]
-
-        self.input_name = config.get("input_name", "")
-        self.namespace = config.get("namespace", "")
-        self.__warnings = config.get("warnings", {})
-        self.bare = config.get("bare", False)
-        self.translator = config.get("translator", gettext.NullTranslations().gettext)
-
-        self.use_throw_helper = config.get("use_throw_helper", False)
-        self.overridden_types = config.get("overridden_types", {})
-
-        self.export_map = {}
-        self.public_identifiers = []
-        self.translated_names = {}
-        self.util_names = {}
+        self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
+        self.__visit = visit
 
         class Executor(object):
             def __init__(cur):
@@ -167,13 +73,150 @@ class Translator(ASTWalker):
                 self.curr_writer = self.writer_stack.pop()
         self.Executor = Executor
 
+    def exe_node(self, node):
+        with self.Executor() as exe:
+            self.__visit(node)
+        return exe.result
+
+    def exe_body(self, body, skip_docstring=False, skip_global=False):
+        with self.Executor() as exe:
+            for stmt in body:
+                """
+                if skip_docstring and isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
+                    continue # Skip docstring
+                """
+                if skip_global and isinstance(stmt, nodes.Global): # The `global` statement is invisible
+                    self.__visit(stmt)
+                    continue
+                self.__visit(stmt)
+                self.semicolon(stmt)
+        return exe.result
+
+    def exe_first_differs(self, body, first_text=None, rest_text=None, do_visit=None):
+        if do_visit is None:
+            do_visit = lambda node: self.__visit(node)
+
+        with self.Executor() as exe:
+            first = True
+            for node in body:
+                if first:
+                    first = False
+                    if first_text is not None:
+                        self.write(first_text)
+                else:
+                    if rest_text is not None:
+                        self.write(rest_text)
+                do_visit(node)
+
+        return exe.result
+
+    def change_buffer(self, buffer_name):
+        self.curr_writer.change_buffer(buffer_name)
+
+    def write(self, s):
+        self.curr_writer.write(s)
+
+    def write_docstring(self, s):
+        self.write("\n/**\n")
+        gotnl = False
+        first = True
+        for line in s.split("\n"):
+            line = line.strip()
+            if line == "":
+                gotnl = True
+            else:
+                if gotnl and not first:
+                    self.write(" *")
+                gotnl = False
+                first = False
+                self.write(" * %s\n" % (line))
+        self.write(" */\n")
+
+    def write_variables(self):
+        if len(self.curr_scope.variables) > 0:
+            first = True
+            for variable in sorted(self.curr_scope.variables):
+                if first:
+                    self.write("var ")
+                    first = False
+                else:
+                    self.write(", ")
+                self.write(variable)
+            self.write(";")
+
+    def push_writer(self):
+        self.writer_stack.append(self.curr_writer)
+        old_writer = self.curr_writer
+        self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
+        self.curr_writer.indent_level = old_writer.indent_level
+
+    def pop_writer(self):
+        old_writer = self.writer_stack.pop()
+        old_writer.buffers[self.BODY_BUFFER].extend(self.curr_writer.buffers[self.HEADER_BUFFER])
+        old_writer.buffers[self.BODY_BUFFER].extend(self.curr_writer.buffers[self.BODY_BUFFER])
+        self.curr_writer = old_writer
+
+    def flush_all_buffer(self):
+        self.out.write("".join(self.curr_writer.buffers[self.HEADER_BUFFER]))
+        self.out.write("".join(self.curr_writer.buffers[self.BODY_BUFFER]))
+        self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
+
+    def semicolon(self, stmt, no_newline = False):
+        """
+        Write a semicolon (and newline) for all statements except the ones
+        in NO_SEMICOLON.
+
+        """
+        if stmt.__class__.__name__ not in utils.NO_SEMICOLON:
+            self.write(";")
+
+
+class Translator(ASTWalker, BufferedWriter):
+    """
+    Second-pass main parser.
+
+    generated variable names:
+        Prambanan.in, Prambanan.subscript, Prambanan.undescore -> same
+        module in import from -> _m_
+        builtins -> same name
+        iterator -> _i, _source, _len, etc
+        ex -> _ex
+
+
+"""
+
+    IDENTIFIER_RE = re.compile("^[A-Za-z_$][0-9A-Za-z_$]*$")
+
+    LIB_NAME = "prambanan"
+
+    def __init__(self, scope, config):
+        ASTWalker.__init__(self, self)
+        BufferedWriter.__init__(self, config, self.visit)
+        self.mod_scope = scope
+        self.curr_scope = None
+
+        self.input_lines = config["input_lines"]
+
+        self.input_name = config.get("input_name", "")
+        self.namespace = config.get("namespace", "")
+        self.__warnings = config.get("warnings", {})
+        self.bare = config.get("bare", False)
+        self.translator = config.get("translator", gettext.NullTranslations().gettext)
+
+        self.use_throw_helper = config.get("use_throw_helper", False)
+        self.overridden_types = config.get("overridden_types", {})
+
+        self.export_map = {}
+        self.public_identifiers = []
+        self.translated_names = {}
+        self.util_names = {}
+
     def visit_module(self, mod):
         """
         Initial node.
         There is and can be only one Module node.
 
         """
-        self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
         self.curr_scope = self.mod_scope
 
         if not self.bare:
@@ -240,8 +283,7 @@ class Translator(ASTWalker):
             name, value = item
             self.write("%s = %s;" %(name, value))
 
-        self.out.write("".join(self.curr_writer.buffers[self.HEADER_BUFFER]))
-        self.out.write("".join(self.curr_writer.buffers[self.BODY_BUFFER]))
+        self.flush_all_buffer()
         self.curr_scope = None
 
 
@@ -377,7 +419,7 @@ class Translator(ASTWalker):
         None -> null
 
         """
-        if n.name in self.RESERVED_WORDS:
+        if n.name in utils.RESERVED_WORDS:
             if not n.name in self.translated_names:
                 self.translated_names[n.name] = self.mod_scope.generate_variable("__keyword_"+n.name)
             self.write(self.translated_names[n.name])
@@ -398,10 +440,10 @@ class Translator(ASTWalker):
             pow_helper = self.get_util_var_name("_pow", "%s.helpers.pow" % self.LIB_NAME)
             self.write("%s(%s, %s)" % (pow_helper, self.exe_node(o.left), self.exe_node(o.right)))
         else:
-            chars, prec, assoc = self.get_op_cpa(o.op)
+            chars, prec, assoc = utils.get_op_cpa(o.op)
             self.visit(o.left)
             self.write(" %s " % (chars))
-            eprec, eassoc = self.get_expr_pa(o.right)
+            eprec, eassoc = utils.get_expr_pa(o.right)
             if eprec >= prec: self.write("(")
             self.visit(o.right)
             if eprec >= prec: self.write(")")
@@ -412,13 +454,13 @@ class Translator(ASTWalker):
 
         """
         first = True
-        chars, prec, assoc = self.get_op_cpa(o.op)
+        chars, prec, assoc = utils.get_op_cpa(o.op)
         for expr in o.values:
             if first:
                 first = False
             else:
-                self.write(" %s " % (self.get_op(o.op)))
-            eprec, eassoc = self.get_expr_pa(expr)
+                self.write(" %s " % (utils.get_op(o.op)))
+            eprec, eassoc = utils.get_expr_pa(expr)
             if eprec >= prec: self.write("(")
             self.visit(expr)
             if eprec >= prec: self.write(")")
@@ -428,8 +470,8 @@ class Translator(ASTWalker):
         Translates a unary operator.
 
         """
-        self.write(self.get_op(o.op))
-        prec, assoc = self.get_expr_pa(o.operand)
+        self.write(utils.get_op(o.op))
+        prec, assoc = utils.get_expr_pa(o.operand)
         if isinstance(o.operand, nodes.Const): prec = 3
         if prec > 2: self.write("(")
         self.visit(o.operand)
@@ -466,8 +508,8 @@ class Translator(ASTWalker):
                 in_helper = self.get_util_var_name("_in", "%s.helpers.in"%self.LIB_NAME)
                 self.write(" %s(%s, %s) " % (in_helper, left_text[0], right_text))
             else:
-                self.write(" %s " % (self.get_op(op)))
-                prec, assoc = self.get_expr_pa(expr)
+                self.write(" %s " % (utils.get_op(op)))
+                prec, assoc = utils.get_expr_pa(expr)
                 if prec > 2: self.write("(")
                 self.write(right_text)
                 if prec > 2: self.write(")")
@@ -609,7 +651,7 @@ class Translator(ASTWalker):
             elif isinstance(a.op, nodes.Sub):
                 self.write("--")
                 return
-        self.write(" %s= " % (self.get_op(a.op[:-1])))
+        self.write(" %s= " % (utils.get_op(a.op[:-1])))
         self.visit(a.value)
 
     def visit_for(self, f):
@@ -1175,75 +1217,6 @@ class Translator(ASTWalker):
         self.write(";%s = %s" % (stmt.name, current))
 
 
-    def get_op(self, op):
-        """
-        Translates an operator.
-
-        """
-        return self.OP_MAP[op][0]
-
-    def get_op_cpa(self, op):
-        """
-        Get operator chars, precedence and associativity.
-
-        """
-        return self.OP_MAP[op]
-
-    def get_expr_pa(self, expr):
-        """
-        Get the precedence and associativity of an expression.
-
-        """
-        name = expr.__class__.__name__
-        if name in ("BoolOp", "BinOp", "UnaryOp"):
-            return self.get_op_cpa(expr.op)[1:]
-        elif name in ("Lambda", "Dict", "List", "Num", "Str", "Name", "Const"):
-            return (1, False)
-        elif name == "IfExp":
-            return (15, False)
-        elif name in ("Getattr", "Subscript"):
-            return (1, True)
-        elif name in ("CallFunc", "Repr"):
-            return (2, True)
-        elif name == "Compare":
-            return (8, True)
-
-    def change_buffer(self, buffer_name):
-        self.curr_writer.change_buffer(buffer_name)
-
-    def write(self, s):
-        self.curr_writer.write(s)
-
-    def write_docstring(self, s):
-        self.write("\n/**\n")
-        gotnl = False
-        first = True
-        for line in s.split("\n"):
-            line = line.strip()
-            if line == "":
-                gotnl = True
-            else:
-                if gotnl and not first:
-                    self.write(" *")
-                gotnl = False
-                first = False
-                self.write(" * %s\n" % (line))
-        self.write(" */\n")
-
-    def write_variables(self):
-        if len(self.curr_scope.variables) > 0:
-            first = True
-            for variable in sorted(self.curr_scope.variables):
-                if first:
-                    self.write("var ")
-                    first = False
-                else:
-                    self.write(", ")
-                self.write(variable)
-            self.write(";")
-
-
-
     def push_context(self, identifier):
         """
         Walk context up.
@@ -1253,11 +1226,7 @@ class Translator(ASTWalker):
         self.curr_scope = self.curr_scope.child(identifier)
         if self.curr_scope is None:
             raise ParseError("Lost context on accessing '%s' from '%s (%s)'" % (identifier, old_context.name, old_context.type))
-
-        self.writer_stack.append(self.curr_writer)
-        old_writer = self.curr_writer
-        self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
-        self.curr_writer.indent_level = old_writer.indent_level
+        self.push_writer()
 
     def pop_context(self):
         """
@@ -1268,57 +1237,7 @@ class Translator(ASTWalker):
 
         self.write_variables()
         self.curr_scope = self.curr_scope.parent
-
-        old_writer = self.writer_stack.pop()
-        old_writer.buffers[self.BODY_BUFFER].extend(self.curr_writer.buffers[self.HEADER_BUFFER])
-        old_writer.buffers[self.BODY_BUFFER].extend(self.curr_writer.buffers[self.BODY_BUFFER])
-        self.curr_writer = old_writer
-
-    def semicolon(self, stmt, no_newline = False):
-        """
-        Write a semicolon (and newline) for all statements except the ones
-        in NO_SEMICOLON.
-
-        """
-        if stmt.__class__.__name__ not in self.NO_SEMICOLON:
-            self.write(";")
-
-    def exe_node(self, node):
-        with self.Executor() as exe:
-            self.visit(node)
-        return exe.result
-
-    def exe_body(self, body, skip_docstring=False, skip_global=False):
-        with self.Executor() as exe:
-            for stmt in body:
-                """
-                if skip_docstring and isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
-                    continue # Skip docstring
-                """
-                if skip_global and isinstance(stmt, nodes.Global): # The `global` statement is invisible
-                    self.visit(stmt)
-                    continue
-                self.visit(stmt)
-                self.semicolon(stmt)
-        return exe.result
-
-    def exe_first_differs(self, body, first_text=None, rest_text=None, do_visit=None):
-        if do_visit is None:
-            do_visit = lambda node: self.visit(node)
-
-        with self.Executor() as exe:
-            first = True
-            for node in body:
-                if first:
-                    first = False
-                    if first_text is not None:
-                        self.write(first_text)
-                else:
-                    if rest_text is not None:
-                        self.write(rest_text)
-                do_visit(node)
-
-        return exe.result
+        self.pop_writer()
 
     def get_util_var_name(self, name, value):
         if not self.bare:
