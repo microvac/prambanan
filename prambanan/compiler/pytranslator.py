@@ -177,12 +177,12 @@ class Translator(ASTWalker):
         self.curr_scope = self.mod_scope
 
         if not self.bare:
-            self.__change_buffer(self.HEADER_BUFFER)
+            self.change_buffer(self.HEADER_BUFFER)
             if mod.doc:
-                self.__write_docstring(self.mod_scope.docstring)
+                self.write_docstring(self.mod_scope.docstring)
 
-            self.__write("(function(%s) {" % self.LIB_NAME)
-            self.__change_buffer(self.BODY_BUFFER)
+            self.write("(function(%s) {" % self.LIB_NAME)
+            self.change_buffer(self.BODY_BUFFER)
 
             public_identifiers = self.mod_scope.module_all
             not_all_exists = public_identifiers is None
@@ -191,7 +191,7 @@ class Translator(ASTWalker):
 
         for k, v in self.export_map.items():
             self.mod_scope.declare_variable(k)
-            self.__write("%s = %s.%s;" % (k, self.LIB_NAME, v))
+            self.write("%s = %s.%s;" % (k, self.LIB_NAME, v))
 
         for stmt in mod.body:
             if isinstance(stmt, nodes.Assign) and len(stmt.targets) == 1 and\
@@ -204,22 +204,22 @@ class Translator(ASTWalker):
             """
 
             if not self.bare and not_all_exists:
-                for name in self.__get_identifiers(stmt):
+                for name in self.get_identifiers(stmt):
                     if name is not None and not name.startswith("_"):
                         public_identifiers.append(name)
 
             self.visit(stmt)
             if( not isinstance(stmt, nodes.Import) and not isinstance(stmt, nodes.From) and not isinstance(stmt, nodes.Pass)):
-                self.__semicolon(stmt)
+                self.semicolon(stmt)
 
         if not self.bare:
             self.public_identifiers.extend(public_identifiers)
 
             get_name = lambda name: name if name not in self.translated_names else self.translated_names[name]
             exported = (self.exe_first_differs(sorted(set(self.public_identifiers)), rest_text=",",
-                do_visit=lambda name: self.__write("%s: %s" % (name, get_name(name)))))
+                do_visit=lambda name: self.write("%s: %s" % (name, get_name(name)))))
 
-            self.__write("%s.exports('%s',{%s});})(%s);" % (self.LIB_NAME, self.namespace, exported, self.LIB_NAME))
+            self.write("%s.exports('%s',{%s});})(%s);" % (self.LIB_NAME, self.namespace, exported, self.LIB_NAME))
 
         builtin_var = None
         builtins = set(self.mod_scope.all_used_builtins())
@@ -228,17 +228,17 @@ class Translator(ASTWalker):
             for builtin in builtins:
                 self.curr_scope.declare_variable(builtin)
 
-        self.__change_buffer(self.HEADER_BUFFER)
-        self.__write_variables()
+        self.change_buffer(self.HEADER_BUFFER)
+        self.write_variables()
 
         if len(builtins) > 0:
-            self.__write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
+            self.write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
             for builtin in builtins:
-                self.__write("%s = %s.%s;" %(builtin, builtin_var, builtin))
+                self.write("%s = %s.%s;" %(builtin, builtin_var, builtin))
 
         for item in self.util_names.values():
             name, value = item
-            self.__write("%s = %s;" %(name, value))
+            self.write("%s = %s;" %(name, value))
 
         self.out.write("".join(self.curr_writer.buffers[self.HEADER_BUFFER]))
         self.out.write("".join(self.curr_writer.buffers[self.BODY_BUFFER]))
@@ -258,10 +258,10 @@ class Translator(ASTWalker):
                 module = self.namespace+"."+module
         modulevarname = module if "." not in module else module[0:module.find(".")]
         modulevarname = self.curr_scope.generate_variable("_m_"+modulevarname)
-        self.__write("%s = __import__('%s'); " % (modulevarname, module))
+        self.write("%s = __import__('%s'); " % (modulevarname, module))
         for name,asname in i.names:
             varname = asname if asname else name
-            self.__write("%s = %s.%s;  " % (varname, modulevarname, name))
+            self.write("%s = %s.%s;  " % (varname, modulevarname, name))
 
     def visit_import(self, i):
         """
@@ -279,7 +279,7 @@ class Translator(ASTWalker):
                 if "." in importname:
                     importname = importname[0:importname.find(".")]
                     varname = importname
-            self.__write("%s = __import__('%s');" % (varname, importname))
+            self.write("%s = __import__('%s');" % (varname, importname))
 
     def infer_call_type(self, func):
         cls = self.curr_scope.class_context()
@@ -335,7 +335,7 @@ class Translator(ASTWalker):
                     raise ParseError("native js only accept one argument", c.lineno, c.col_offset)
                 if not isinstance(c.args[0], nodes.Const) and not isinstance(c.args[0].value, str):
                     raise ParseError("native js only accept string",c.lineno, c.col_offset)
-                self.__write(re.sub(r'(?:@{{[!]?)([^}}]*)(?:}})', r"\1",c.args[0].value))
+                self.write(re.sub(r'(?:@{{[!]?)([^}}]*)(?:}})', r"\1",c.args[0].value))
                 return
         elif isinstance(c.func, nodes.Getattr):
             call_type = "getattr"
@@ -345,20 +345,20 @@ class Translator(ASTWalker):
                     if (not len(c.func.expr.args) == 2):
                         self.raise_error("Only python 2 simple super supported", c)
                     attrname = c.func.attrname
-                    self.__write("%s(" % self.get_util_var_name("_super", "%s.helpers.super" % self.LIB_NAME))
-                    self.__write("this, '%s')" %  attrname)
+                    self.write("%s(" % self.get_util_var_name("_super", "%s.helpers.super" % self.LIB_NAME))
+                    self.write("this, '%s')" %  attrname)
                     method_written = True
 
         if type is None and "type" in self.__warnings:
             sys.stderr.write(" Warning: Cannot infer type [ call: %s, name: %s ] in line %s\n" % (call_type, name, c.lineno ))
         elif type == "Class":
-            self.__write("new ")
+            self.write("new ")
 
         if not method_written:
             self.visit(c.func)
-        self.__write("(")
-        self.__parse_call_args(c)
-        self.__write(")")
+        self.write("(")
+        self.parse_call_args(c)
+        self.write(")")
 
     def visit_assname(self, n):
         self.visit_name(n)
@@ -380,9 +380,9 @@ class Translator(ASTWalker):
         if n.name in self.RESERVED_WORDS:
             if not n.name in self.translated_names:
                 self.translated_names[n.name] = self.mod_scope.generate_variable("__keyword_"+n.name)
-            self.__write(self.translated_names[n.name])
+            self.write(self.translated_names[n.name])
         else:
-            self.__write(n.name)
+            self.write(n.name)
 
     def visit_binop(self, o):
         """
@@ -393,18 +393,18 @@ class Translator(ASTWalker):
         """
         if o.op == "%" and not (isinstance(o.left, nodes.Const) and isinstance(o.left.value, int)):
             args = self.exe_first_differs(o.right.elts, rest_text=",") if isinstance(o.right, nodes.Tuple) else self.exe_node(o.right)
-            self.__write("%s.__mod__(%s)" % (self.exe_node(o.left), args))
+            self.write("%s.__mod__(%s)" % (self.exe_node(o.left), args))
         elif o.op == "**":
             pow_helper = self.get_util_var_name("_pow", "%s.helpers.pow" % self.LIB_NAME)
-            self.__write("%s(%s, %s)" % (pow_helper, self.exe_node(o.left), self.exe_node(o.right)))
+            self.write("%s(%s, %s)" % (pow_helper, self.exe_node(o.left), self.exe_node(o.right)))
         else:
-            chars, prec, assoc = self.__get_op_cpa(o.op)
+            chars, prec, assoc = self.get_op_cpa(o.op)
             self.visit(o.left)
-            self.__write(" %s " % (chars))
-            eprec, eassoc = self.__get_expr_pa(o.right)
-            if eprec >= prec: self.__write("(")
+            self.write(" %s " % (chars))
+            eprec, eassoc = self.get_expr_pa(o.right)
+            if eprec >= prec: self.write("(")
             self.visit(o.right)
-            if eprec >= prec: self.__write(")")
+            if eprec >= prec: self.write(")")
 
     def visit_boolop(self, o):
         """
@@ -412,28 +412,28 @@ class Translator(ASTWalker):
 
         """
         first = True
-        chars, prec, assoc = self.__get_op_cpa(o.op)
+        chars, prec, assoc = self.get_op_cpa(o.op)
         for expr in o.values:
             if first:
                 first = False
             else:
-                self.__write(" %s " % (self.__get_op(o.op)))
-            eprec, eassoc = self.__get_expr_pa(expr)
-            if eprec >= prec: self.__write("(")
+                self.write(" %s " % (self.get_op(o.op)))
+            eprec, eassoc = self.get_expr_pa(expr)
+            if eprec >= prec: self.write("(")
             self.visit(expr)
-            if eprec >= prec: self.__write(")")
+            if eprec >= prec: self.write(")")
 
     def visit_unaryop(self, o):
         """
         Translates a unary operator.
 
         """
-        self.__write(self.__get_op(o.op))
-        prec, assoc = self.__get_expr_pa(o.operand)
+        self.write(self.get_op(o.op))
+        prec, assoc = self.get_expr_pa(o.operand)
         if isinstance(o.operand, nodes.Const): prec = 3
-        if prec > 2: self.__write("(")
+        if prec > 2: self.write("(")
         self.visit(o.operand)
-        if prec > 2: self.__write(")")
+        if prec > 2: self.write(")")
 
     def visit_compare(self, c):
         """
@@ -446,7 +446,7 @@ class Translator(ASTWalker):
         def op_executor(ops):
             op, expr = ops
             if len(c.ops) > 1:
-                self.__write("(")
+                self.write("(")
 
             if remaining[0] > 1:
                 if not isinstance(expr, nodes.Const) and not isinstance(expr, nodes.Name):
@@ -458,27 +458,27 @@ class Translator(ASTWalker):
                 right_text = self.exe_node(expr)
 
             if op != "in" and op != "not in":
-                self.__write(left_text[0])
+                self.write(left_text[0])
 
             if op == "in" or op == "not in":
                 if op == "not in":
-                    self.__write(" !")
+                    self.write(" !")
                 in_helper = self.get_util_var_name("_in", "%s.helpers.in"%self.LIB_NAME)
-                self.__write(" %s(%s, %s) " % (in_helper, left_text[0], right_text))
+                self.write(" %s(%s, %s) " % (in_helper, left_text[0], right_text))
             else:
-                self.__write(" %s " % (self.__get_op(op)))
-                prec, assoc = self.__get_expr_pa(expr)
-                if prec > 2: self.__write("(")
-                self.__write(right_text)
-                if prec > 2: self.__write(")")
+                self.write(" %s " % (self.get_op(op)))
+                prec, assoc = self.get_expr_pa(expr)
+                if prec > 2: self.write("(")
+                self.write(right_text)
+                if prec > 2: self.write(")")
             left_text[0] = right_text
             remaining[0] = remaining[0] - 1
             if len(c.ops) > 1:
-                self.__write(")")
+                self.write(")")
 
         body = self.exe_first_differs(c.ops, rest_text="&&", do_visit=op_executor)
         c.inits = inits
-        self.__write(body)
+        self.write(body)
 
     def visit_dict(self, d):
         """
@@ -491,18 +491,18 @@ class Translator(ASTWalker):
                 if first:
                     first = False
                 else:
-                    self.__write(",")
+                    self.write(",")
                 if not isinstance(key, nodes.Const):
                     self.raise_error("Only numbers and string literals are allowed in dictionary expressions", key)
                 if isinstance(key.value, int):
-                    self.__write("%d: " % (key.value))
+                    self.write("%d: " % (key.value))
                 else:
                     if self.IDENTIFIER_RE.match(key.value):
-                        self.__write("%s: " % (key.value))
+                        self.write("%s: " % (key.value))
                     else:
-                        self.__write("\"%s\": " % (key.value))
+                        self.write("\"%s\": " % (key.value))
                 self.visit(value)
-        self.__write("{%s}" % items.result)
+        self.write("{%s}" % items.result)
 
     def visit_subscript(self, s):
         """
@@ -514,11 +514,11 @@ class Translator(ASTWalker):
         if isinstance(s.parent, nodes.Assign) or isinstance(s.parent, nodes.Discard):# or isinstance(s.parent, ast.Load) or isinstance(s.parent, ast.Store) :
             if isinstance(s.slice, nodes.Index) and isinstance(s.slice.value, nodes.Const) and s.slice.value.value >= 0:
                 s.simple = True
-                self.__write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
+                self.write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
                 return
             if isinstance(s.slice, nodes.Index) and isinstance(s.slice.value, nodes.Const) and isinstance(s.slice.value.value, str) :
                 s.simple = True
-                self.__write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
+                self.write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
                 return
 
         func = ""
@@ -536,19 +536,19 @@ class Translator(ASTWalker):
         with self.Executor() as args:
             if isinstance(s.slice, nodes.Index):
                 type='i'
-                self.__write("%s" % ("null" if s.slice.value is None else self.exe_node(s.slice.value)))
+                self.write("%s" % ("null" if s.slice.value is None else self.exe_node(s.slice.value)))
             elif isinstance(s.slice, nodes.Slice):
                 type="s"
-                self.__write("%s" % ("null" if s.slice.lower is None else self.exe_node(s.slice.lower)))
-                self.__write(", %s" % ("null" if s.slice.upper is None else self.exe_node(s.slice.upper)))
-                self.__write(", %s" % ("null" if s.slice.step is None else self.exe_node(s.slice.step)))
+                self.write("%s" % ("null" if s.slice.lower is None else self.exe_node(s.slice.lower)))
+                self.write(", %s" % ("null" if s.slice.upper is None else self.exe_node(s.slice.upper)))
+                self.write(", %s" % ("null" if s.slice.step is None else self.exe_node(s.slice.step)))
             else:
                 self.raise_error("Subscript slice type '%s' is not supported" % (str(s.slice.__class__.__name__)), s)
 
-        self.__write("%s.%s.%s(%s,%s" % (subscript, func, type, value, args.result))
+        self.write("%s.%s.%s(%s,%s" % (subscript, func, type, value, args.result))
 
         if s.simple:
-            self.__write(")")
+            self.write(")")
 
     def visit_assign(self, a):
         """
@@ -571,30 +571,30 @@ class Translator(ASTWalker):
             self.raise_error("tuple are not allowed on multiple assignment", tuple_target)
 
         if is_target_tuple:
-            self.__write("(function(_source){")
+            self.write("(function(_source){")
             tuple = a.targets[0]
             for i in range(0, len(target.elts)):
                 elt = tuple.elts[i]
                 self.visit(elt)
-                self.__write(" = _source[%d]; " % i)
-            self.__write("})(")
+                self.write(" = _source[%d]; " % i)
+            self.write("})(")
         else:
             for target in a.targets:
                 self.visit(target)
                 if isinstance(target, nodes.Subscript) and not target.simple:
-                    self.__write(", ")
+                    self.write(", ")
                 else:
-                    self.__write(" = ")
+                    self.write(" = ")
 
         if isinstance(a.value, nodes.Tuple):
-            self.__write("[%s]" % self.exe_first_differs(a.value.elts, rest_text=","))
+            self.write("[%s]" % self.exe_first_differs(a.value.elts, rest_text=","))
         else:
             self.visit(a.value)
 
         if is_target_tuple:
-            self.__write(")")
+            self.write(")")
         if isinstance(target, nodes.Subscript) and not target.simple:
-            self.__write(")")
+            self.write(")")
 
     def visit_augassign(self, a):
         """
@@ -604,12 +604,12 @@ class Translator(ASTWalker):
         self.visit(a.target)
         if isinstance(a.value, nodes.Const) and a.value == 1:
             if isinstance(a.op, nodes.Add):
-                self.__write("++")
+                self.write("++")
                 return
             elif isinstance(a.op, nodes.Sub):
-                self.__write("--")
+                self.write("--")
                 return
-        self.__write(" %s= " % (self.__get_op(a.op[:-1])))
+        self.write(" %s= " % (self.get_op(a.op[:-1])))
         self.visit(a.value)
 
     def visit_for(self, f):
@@ -639,13 +639,13 @@ class Translator(ASTWalker):
             for i in range(0, len(iter_var)):
                 init = init + ("%s = %s[%s][%d];" % (iter_var[i], list_var, i_var, i))
 
-        self.__write("%s = %s;" % (list_var, self.exe_node(f.iter)))
-        self.__write("for (%s = 0, %s = %s.length; %s < %s; %s++) {" % (i_var, len_var, list_var, i_var, len_var, i_var))
-        self.__write("   %s" % init)
-        self.__write("   %s" % self.exe_body(f.body))
-        self.__write("}")
+        self.write("%s = %s;" % (list_var, self.exe_node(f.iter)))
+        self.write("for (%s = 0, %s = %s.length; %s < %s; %s++) {" % (i_var, len_var, list_var, i_var, len_var, i_var))
+        self.write("   %s" % init)
+        self.write("   %s" % self.exe_body(f.body))
+        self.write("}")
         if len(f.orelse) > 0:
-            self.__write("if(%s == %s){%s}" % (i_var, len_var, self.exe_body(f.orelse)))
+            self.write("if(%s == %s){%s}" % (i_var, len_var, self.exe_body(f.orelse)))
 
 
     def visit_class(self, c):
@@ -657,7 +657,7 @@ class Translator(ASTWalker):
         """
         fullname = "t__%s_" % c.name if self.namespace == "" else "t_%s_%s" % (self.namespace.replace(".", "_"), c.name)
         ctor_name = self.curr_scope.generate_variable("%s" % fullname, declared=False)
-        self.__push_context(c.name)
+        self.push_context(c.name)
 
         bases = filter(lambda b: not isinstance(b, nodes.Name) or b.name != "object", c.bases)
         if len(bases) > 0:
@@ -665,49 +665,49 @@ class Translator(ASTWalker):
         else:
             bases_param = "[object]"
 
-        self.__change_buffer(self.HEADER_BUFFER)
+        self.change_buffer(self.HEADER_BUFFER)
 
 
         # Named constructor function
-        self.__write("function %s(){ this.__init__.apply(this, arguments); } " % (ctor_name))
+        self.write("function %s(){ this.__init__.apply(this, arguments); } " % (ctor_name))
         if c.doc:
-            self.__write_docstring(c.doc)
+            self.write_docstring(c.doc)
         create_class = self.get_util_var_name("_class", "%s.helpers.class" %self.LIB_NAME)
-        self.__write("%s = %s(%s, %s, function(){" % (c.name, create_class, ctor_name, bases_param))
+        self.write("%s = %s(%s, %s, function(){" % (c.name, create_class, ctor_name, bases_param))
 
 
-        self.__change_buffer(self.BODY_BUFFER)
+        self.change_buffer(self.BODY_BUFFER)
 
         exported = []
         proto_only = []
         cls_only = []
         # Instance member
         for stmt in c.body:
-            exported.extend(self.__get_identifiers(stmt))
+            exported.extend(self.get_identifiers(stmt))
             if isinstance(stmt, nodes.Function):
-                decorators = self.__get_special_decorators(stmt)
+                decorators = self.get_special_decorators(stmt)
                 if not "staticmethod" in decorators:
                     proto_only.append(stmt.name)
                 else:
                     cls_only.append(stmt.name)
 
             self.visit(stmt)
-            self.__semicolon(stmt);
+            self.semicolon(stmt);
 
         all_attrs = set(exported).difference(set(proto_only)).difference(set(cls_only))
 
         def write_attrs(attrs):
-            content = self.exe_first_differs(attrs, rest_text = ",", do_visit = lambda(x): self.__write("%s:%s" %(x, x)))
-            self.__write("{%s}"% content)
+            content = self.exe_first_differs(attrs, rest_text = ",", do_visit = lambda(x): self.write("%s:%s" %(x, x)))
+            self.write("{%s}"% content)
 
         content = self.exe_first_differs([proto_only, cls_only, all_attrs], rest_text = ",", do_visit = lambda(x): write_attrs(x))
-        self.__write("return [%s]" % content)
+        self.write("return [%s]" % content)
 
 
-        self.__write("})")
-        self.__write_decorators(c)
+        self.write("})")
+        self.write_decorators(c)
 
-        self.__pop_context()
+        self.pop_context()
 
     def visit_function(self, f):
         """
@@ -716,91 +716,91 @@ class Translator(ASTWalker):
         or `name: function (...)`.
 
         """
-        self.__push_context(f.name)
+        self.push_context(f.name)
 
 
         is_method = self.curr_scope.type == "Method"
 
         # Special decorators
-        decorators = self.__get_special_decorators(f)
+        decorators = self.get_special_decorators(f)
         is_static = decorators.has_key("staticmethod")
 
-        self.__change_buffer(self.HEADER_BUFFER)
+        self.change_buffer(self.HEADER_BUFFER)
 
         # Write docstring
         if f.doc:
-            self.__write_docstring(f.doc)
+            self.write_docstring(f.doc)
 
         # Declaration
-        self.__write("%s = function (" % f.name)
+        self.write("%s = function (" % f.name)
 
         # Parse arguments
-        self.__parse_args(f.args, is_method and not is_static)
-        self.__write(") {")
+        self.parse_args(f.args, is_method and not is_static)
+        self.write(") {")
 
-        self.__change_buffer(self.BODY_BUFFER)
+        self.change_buffer(self.BODY_BUFFER)
 
         # Handle default value, var args, kwargs
-        self.__parse_defaults(f.args, is_method and not is_static)
+        self.parse_defaults(f.args, is_method and not is_static)
 
 
         # Write self = this
         if is_method and not is_static:
             self.curr_scope.declare_variable(f.args.args[0].name)
-            self.__write("%s = this;"%f.args.args[0].name)
+            self.write("%s = this;"%f.args.args[0].name)
 
         # Function body
         if "JSNoOp" in decorators:
-            self.__write("return undefined;")
+            self.write("return undefined;")
         else:
-            self.__write(self.exe_body(f.body, True, True))
+            self.write(self.exe_body(f.body, True, True))
 
-        self.__write("}")
-        self.__write_decorators(f)
+        self.write("}")
+        self.write_decorators(f)
 
-        self.__pop_context()
+        self.pop_context()
 
 
     def visit_tryexcept(self, tf):
         ex_var = self.curr_scope.generate_variable("_ex")
 
-        self.__write("try{ %s }" % self.exe_body(tf.body, True, True))
-        self.__write("catch (%s){" % ex_var)
+        self.write("try{ %s }" % self.exe_body(tf.body, True, True))
+        self.write("catch (%s){" % ex_var)
         has_first = False
         has_catch_all = False
         for handler in tf.handlers:
             has_if = False
             if handler.type is not None:
                 if has_first:
-                    self.__write("else ")
+                    self.write("else ")
                 if(isinstance(handler.type, nodes.AssAttr) or isinstance(handler.type, nodes.Name)):
-                    self.__write("if (%s instanceof %s){" %(ex_var, self.exe_node(handler.type)))
+                    self.write("if (%s instanceof %s){" %(ex_var, self.exe_node(handler.type)))
                 elif(isinstance(handler.type, nodes.Tuple)):
-                    self.__write("if (%s){" % self.exe_first_differs(handler.type.elts,
+                    self.write("if (%s){" % self.exe_first_differs(handler.type.elts,
                         rest_text="||",
-                        do_visit=lambda elt: self.__write("(%s instanceof %s)" % (ex_var, self.exe_node(elt)))
+                        do_visit=lambda elt: self.write("(%s instanceof %s)" % (ex_var, self.exe_node(elt)))
                     ))
                 has_if = has_first = True
             else:
                 has_catch_all = True
                 if has_first:
-                    self.__write("else {")
+                    self.write("else {")
                     has_if = True
                 has_first = True
             if handler.name is not None:
-                self.__write("%s = %s;" %(handler.name.name, ex_var))
-            self.__write(self.exe_body(handler.body, True, True))
+                self.write("%s = %s;" %(handler.name.name, ex_var))
+            self.write(self.exe_body(handler.body, True, True))
             if has_if:
-                self.__write("}");
+                self.write("}");
         if not has_catch_all:
             if has_first:
                 if self.use_throw_helper:
                     throw = self.get_util_var_name("_throw", "%s.helpers.throw" %self.LIB_NAME)
                     file = self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
-                    self.__write("else { %s(%s, %s, %d); }"% (throw, ex_var, file, tf.lineno))
+                    self.write("else { %s(%s, %s, %d); }"% (throw, ex_var, file, tf.lineno))
                 else:
-                    self.__write("else { throw %s }" % ex_var)
-        self.__write("}");
+                    self.write("else { throw %s }" % ex_var)
+        self.write("}");
 
     def visit_listcomp(self, lc):
         """
@@ -826,10 +826,10 @@ class Translator(ASTWalker):
                 t = elt.name
                 iter_var.append(t)
 
-        self.__push_context(lc.name)
-        self.__change_buffer(self.HEADER_BUFFER)
-        self.__write(" (function(){ ")
-        self.__change_buffer(self.BODY_BUFFER)
+        self.push_context(lc.name)
+        self.change_buffer(self.HEADER_BUFFER)
+        self.write(" (function(){ ")
+        self.change_buffer(self.BODY_BUFFER)
 
         i_var = self.curr_scope.generate_variable("_i")
         len_var = self.curr_scope.generate_variable("_len")
@@ -838,22 +838,22 @@ class Translator(ASTWalker):
         list_var = self.curr_scope.generate_variable("_list")
         iter_name = self.get_util_var_name("_iter", "%s.helpers.iter" %self.LIB_NAME);
 
-        self.__write("%s = []; " % results_var)
-        self.__write("%s = %s(%s); " % (list_var, iter_name, self.exe_node(f.iter)))
-        self.__write("for (%s = 0, %s = %s.length; %s < %s; %s++) {" % (i_var, len_var, list_var, i_var, len_var, i_var))
+        self.write("%s = []; " % results_var)
+        self.write("%s = %s(%s); " % (list_var, iter_name, self.exe_node(f.iter)))
+        self.write("for (%s = 0, %s = %s.length; %s < %s; %s++) {" % (i_var, len_var, list_var, i_var, len_var, i_var))
         if not is_tuple:
-            self.__write(    "%s = %s[%s];" % (iter_var, list_var, i_var))
+            self.write(    "%s = %s[%s];" % (iter_var, list_var, i_var))
         else:
             for i in range(0, len(iter_var)):
-                self.__write("%s = %s[%s][%d];" % (iter_var[i], list_var, i_var, i))
+                self.write("%s = %s[%s][%d];" % (iter_var[i], list_var, i_var, i))
         for _if in f.ifs:
-            self.__write("    if (%s)" % self.exe_node(_if))
-        self.__write(            "%s.push(%s);" % (results_var, self.exe_node(lc.elt)))
-        self.__write("}")
-        self.__write("return %s;" % results_var)
-        self.__write("})()")
+            self.write("    if (%s)" % self.exe_node(_if))
+        self.write(            "%s.push(%s);" % (results_var, self.exe_node(lc.elt)))
+        self.write("}")
+        self.write("return %s;" % results_var)
+        self.write("})()")
 
-        self.__pop_context()
+        self.pop_context()
 
 
     def visit_raise(self, r):
@@ -862,29 +862,29 @@ class Translator(ASTWalker):
         if self.use_throw_helper:
             throw = self.get_util_var_name("_throw", "%s.helpers.throw" %self.LIB_NAME)
             file = self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
-            self.__write("%s(%s, %s, %d)"% (throw, exc, file, r.lineno))
+            self.write("%s(%s, %s, %d)"% (throw, exc, file, r.lineno))
         else:
-            self.__write("throw %s" % exc)
+            self.write("throw %s" % exc)
 
     def visit_print(self, p):
         """
         Translate print "aa" to print("aa")
 
         """
-        self.__write("print(%s)" % self.exe_first_differs(p.values, rest_text=","))
+        self.write("print(%s)" % self.exe_first_differs(p.values, rest_text=","))
 
     def visit_discard(self, v):
         self.visit(v.value)
 
     def visit_const(self, t):
         if isinstance(t.value, str):
-            self.__write(simplejson.dumps(self.translator(t.value)))
+            self.write(simplejson.dumps(self.translator(t.value)))
         elif isinstance(t.value, bool):
-            self.__write(str(t.value).lower())
+            self.write(str(t.value).lower())
         elif isinstance(t.value, int) or isinstance(t.value, float):
-            self.__write(str(t.value))
+            self.write(str(t.value))
         elif t.value is None:
-            self.__write("null")
+            self.write("null")
         else:
             raise ValueError("const not recognized")
 
@@ -902,8 +902,8 @@ class Translator(ASTWalker):
 
         """
         with self.Executor() as args:
-            self.__parse_args(l.args)
-        self.__write("function(%s) {return %s; }" % (args.result, self.exe_node(l.body)))
+            self.parse_args(l.args)
+        self.write("function(%s) {return %s; }" % (args.result, self.exe_node(l.body)))
 
     def visit_yield(self, y):
         """
@@ -918,16 +918,16 @@ class Translator(ASTWalker):
 
         """
         if r.value:
-            self.__write("return %s" % self.exe_node(r.value))
+            self.write("return %s" % self.exe_node(r.value))
         else:
-            self.__write("return")
+            self.write("return")
 
     def visit_list(self, l):
         """
         Translate a list expression.
 
         """
-        self.__write("[%s]" % self.exe_first_differs(l.elts, rest_text=","))
+        self.write("[%s]" % self.exe_first_differs(l.elts, rest_text=","))
 
     def visit_delete(self, d):
         """
@@ -938,7 +938,7 @@ class Translator(ASTWalker):
             if isinstance(target, nodes.Subscript):
                 self.visit(target)
             else:
-                self.__write("delete %s" % self.exe_node(target))
+                self.write("delete %s" % self.exe_node(target))
 
 
     def visit_pass(self, p):
@@ -946,35 +946,35 @@ class Translator(ASTWalker):
         Translate the `pass` statement. Places a comment.
 
         """
-        self.__write("/* pass */")
+        self.write("/* pass */")
 
     def visit_continue(self, c):
         """
         Translate the `continue` statement.
 
         """
-        self.__write("continue")
+        self.write("continue")
 
     def visit_break(self, c):
         """
         Translate the `break` statement.
 
         """
-        self.__write("break")
+        self.write("break")
 
     def visit_getattr(self, a):
         """
         Translate an attribute chain.
 
         """
-        self.__write("%s.%s" % (self.exe_node(a.expr), a.attrname))
+        self.write("%s.%s" % (self.exe_node(a.expr), a.attrname))
 
     def visit_assattr(self, a):
         """
         Translate an attribute chain.
 
         """
-        self.__write("%s.%s" % (self.exe_node(a.expr), a.attrname))
+        self.write("%s.%s" % (self.exe_node(a.expr), a.attrname))
 
 
     def visit_if(self, i):
@@ -984,10 +984,10 @@ class Translator(ASTWalker):
         """
         test = self.exe_node(i.test)
         if isinstance(i.test, nodes.Compare):
-            self.__write("".join(i.test.inits))
-        self.__write("if ( %s ) { %s }" % (test, self.exe_body(i.body)))
+            self.write("".join(i.test.inits))
+        self.write("if ( %s ) { %s }" % (test, self.exe_body(i.body)))
         if len(i.orelse) > 0:
-            self.__write("else {%s}" % self.exe_body(i.orelse))
+            self.write("else {%s}" % self.exe_body(i.orelse))
 
 
     def visit_ifexp(self, i):
@@ -999,7 +999,7 @@ class Translator(ASTWalker):
         if isinstance(i.test, nodes.Compare):
             if len(i.test.inits) > 0:
                 self.raise_error("if else node cannot have complicated multiple comparison", i)
-        self.__write("%s ? %s : %s" % (test, self.exe_node(i.body), self.exe_node(i.orelse)))
+        self.write("%s ? %s : %s" % (test, self.exe_node(i.body), self.exe_node(i.orelse)))
 
     def visit_while(self, w):
         """
@@ -1011,25 +1011,25 @@ class Translator(ASTWalker):
 
         test = self.exe_node(w.test)
         if isinstance(w.test, nodes.Compare):
-            self.__write("".join(w.test.inits))
+            self.write("".join(w.test.inits))
 
-        self.__write("while (%s){ %s }" % (test, self.exe_body(w.body)))
+        self.write("while (%s){ %s }" % (test, self.exe_body(w.body)))
 
 
 
     def visit_tryfinally(self, tf):
-        self.__write("try{ %s } finally { %s }" % (self.exe_body(tf.body, True, True),  self.exe_body(tf.finalbody, True, True)))
+        self.write("try{ %s } finally { %s }" % (self.exe_body(tf.body, True, True),  self.exe_body(tf.finalbody, True, True)))
 
     def visit_assert(self, a):
         pass
 
     def visit_tuple(self, t):
-        self.__write("[%s]" % self.exe_first_differs(t.elts, rest_text=","))
+        self.write("[%s]" % self.exe_first_differs(t.elts, rest_text=","))
 
     def visit_default(self, node):
         raise ParseError("Could not parse node type '%s'" % str(node.__class__.__name__), node.lineno, node.col_offset)
 
-    def __parse_call_args(self, args, comma_first=False):
+    def parse_call_args(self, args, comma_first=False):
         """
         Translate a list of arguments.
 
@@ -1038,12 +1038,12 @@ class Translator(ASTWalker):
         i = 0
         for arg in args.args:
             if (not first) or comma_first:
-                self.__write(", ")
+                self.write(", ")
             first = False
             if isinstance(arg, nodes.Keyword):
                 make_kwargs = self.get_util_var_name("_make_kwargs", "%s.helpers.make_kwargs" % self.LIB_NAME)
-                kwargs = self.exe_first_differs(args.args[i:], rest_text=",",do_visit=lambda arg: self.__write("%s:%s" % (arg.arg, (self.exe_node(arg.value)))))
-                self.__write("%s({%s})" % (make_kwargs, kwargs))
+                kwargs = self.exe_first_differs(args.args[i:], rest_text=",",do_visit=lambda arg: self.write("%s:%s" % (arg.arg, (self.exe_node(arg.value)))))
+                self.write("%s({%s})" % (make_kwargs, kwargs))
                 break
             else:
                 self.visit(arg)
@@ -1051,15 +1051,15 @@ class Translator(ASTWalker):
 
         if args.starargs is not None:
             if (not first) or comma_first:
-                self.__write(", ")
+                self.write(", ")
             first = False
-            self.__write(self.exe_node(args.starargs))
+            self.write(self.exe_node(args.starargs))
 
         if args.kwargs is not None:
             if (not first) or comma_first:
-                self.__write(", ")
+                self.write(", ")
             first = False
-            self.__write(self.exe_node(args.kwargs))
+            self.write(self.exe_node(args.kwargs))
 
             """
         if len(args.keywords) > 0:
@@ -1070,7 +1070,7 @@ class Translator(ASTWalker):
             """
 
 
-    def __parse_args(self, args, strip_first = False):
+    def parse_args(self, args, strip_first = False):
         """
         Translate a list of arguments.
 
@@ -1083,50 +1083,50 @@ class Translator(ASTWalker):
                     continue
                 first = False
             else:
-                self.__write(", ")
+                self.write(", ")
             self.visit(arg)
 
         if args.vararg is not None:
             if first:
                 first = False
             else:
-                self.__write(", ")
-            self.__write(args.vararg)
+                self.write(", ")
+            self.write(args.vararg)
 
         if args.kwarg is not None:
             if first:
                 first = False
             else:
-                self.__write(", ")
-            self.__write(args.kwarg)
+                self.write(", ")
+            self.write(args.kwarg)
 
-    def __parse_defaults(self, args, strip_first=False):
+    def parse_defaults(self, args, strip_first=False):
         """
         Translate the default arguments list.
         """
         if len(args.defaults) > 0 or args.vararg is not None or args.kwarg is not None:
             args_name = self.curr_scope.generate_variable("_args")
             init_args = self.get_util_var_name("_init_args", ("%s.helpers.init_args" % self.LIB_NAME))
-            self.__write("%s = %s(arguments);" % (args_name , init_args))
+            self.write("%s = %s(arguments);" % (args_name , init_args))
 
         if len(args.defaults) > 0:
             first = len(args.args) - len(args.defaults)
             for i in xrange(len(args.defaults)):
                 get_arg = self.get_util_var_name("_get_arg", ("%s.helpers.get_arg" % self.LIB_NAME))
                 arg_name = self.exe_node(args.args[first+i])
-                self.__write("%s = %s(%d, \"%s\", %s, %s);" % (arg_name, get_arg, first+i, arg_name, args_name, self.exe_node(args.defaults[i])))
+                self.write("%s = %s(%d, \"%s\", %s, %s);" % (arg_name, get_arg, first+i, arg_name, args_name, self.exe_node(args.defaults[i])))
 
         if args.vararg is not None:
             get_varargs = self.get_util_var_name("_get_varargs", ("%s.helpers.get_varargs" % self.LIB_NAME))
             index = len(args.args)
-            self.__write("%s = %s(%d, %s);" % (args.vararg, get_varargs, index, args_name))
+            self.write("%s = %s(%d, %s);" % (args.vararg, get_varargs, index, args_name))
 
         if args.kwarg is not None:
             get_kwargs = self.get_util_var_name("_get_kwargs", ("%s.helpers.get_kwargs" % self.LIB_NAME))
-            self.__write("%s = %s(%s);" % (args.kwarg, get_kwargs, args_name))
+            self.write("%s = %s(%s);" % (args.kwarg, get_kwargs, args_name))
 
 
-    def __get_identifiers(self, stmt):
+    def get_identifiers(self, stmt):
         names = []
         if isinstance(stmt, nodes.Class) or isinstance(stmt, nodes.Function):
             names.append(stmt.name)
@@ -1137,7 +1137,7 @@ class Translator(ASTWalker):
         return names
 
 
-    def __get_special_decorators(self, stmt):
+    def get_special_decorators(self, stmt):
         """
         Return a dictionary of decorators and their parameters.
 
@@ -1151,7 +1151,7 @@ class Translator(ASTWalker):
                         continue
         return decorators
 
-    def __write_decorators(self, stmt):
+    def write_decorators(self, stmt):
         current = stmt.name
         if stmt.decorators is None:
             return
@@ -1164,39 +1164,39 @@ class Translator(ASTWalker):
             elif isinstance(dec, nodes.CallFunc):
                 with self.Executor() as call:
                     self.visit(dec.func)
-                    self.__write("(")
-                    self.__parse_call_args(dec)
-                    self.__write(")")
+                    self.write("(")
+                    self.parse_call_args(dec)
+                    self.write(")")
                 header = call.result
             else:
                 self.raise_error("This class decorator is not supported. Only decorators of pycow.decorators are supported",dec)
             current = "%s(%s)" % (header, current)
 
-        self.__write(";%s = %s" % (stmt.name, current))
+        self.write(";%s = %s" % (stmt.name, current))
 
 
-    def __get_op(self, op):
+    def get_op(self, op):
         """
         Translates an operator.
 
         """
         return self.OP_MAP[op][0]
 
-    def __get_op_cpa(self, op):
+    def get_op_cpa(self, op):
         """
         Get operator chars, precedence and associativity.
 
         """
         return self.OP_MAP[op]
 
-    def __get_expr_pa(self, expr):
+    def get_expr_pa(self, expr):
         """
         Get the precedence and associativity of an expression.
 
         """
         name = expr.__class__.__name__
         if name in ("BoolOp", "BinOp", "UnaryOp"):
-            return self.__get_op_cpa(expr.op)[1:]
+            return self.get_op_cpa(expr.op)[1:]
         elif name in ("Lambda", "Dict", "List", "Num", "Str", "Name", "Const"):
             return (1, False)
         elif name == "IfExp":
@@ -1208,14 +1208,14 @@ class Translator(ASTWalker):
         elif name == "Compare":
             return (8, True)
 
-    def __change_buffer(self, buffer_name):
+    def change_buffer(self, buffer_name):
         self.curr_writer.change_buffer(buffer_name)
 
-    def __write(self, s):
+    def write(self, s):
         self.curr_writer.write(s)
 
-    def __write_docstring(self, s):
-        self.__write("\n/**\n")
+    def write_docstring(self, s):
+        self.write("\n/**\n")
         gotnl = False
         first = True
         for line in s.split("\n"):
@@ -1224,27 +1224,27 @@ class Translator(ASTWalker):
                 gotnl = True
             else:
                 if gotnl and not first:
-                    self.__write(" *")
+                    self.write(" *")
                 gotnl = False
                 first = False
-                self.__write(" * %s\n" % (line))
-        self.__write(" */\n")
+                self.write(" * %s\n" % (line))
+        self.write(" */\n")
 
-    def __write_variables(self):
+    def write_variables(self):
         if len(self.curr_scope.variables) > 0:
             first = True
             for variable in sorted(self.curr_scope.variables):
                 if first:
-                    self.__write("var ")
+                    self.write("var ")
                     first = False
                 else:
-                    self.__write(", ")
-                self.__write(variable)
-            self.__write(";")
+                    self.write(", ")
+                self.write(variable)
+            self.write(";")
 
 
 
-    def __push_context(self, identifier):
+    def push_context(self, identifier):
         """
         Walk context up.
 
@@ -1259,14 +1259,14 @@ class Translator(ASTWalker):
         self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
         self.curr_writer.indent_level = old_writer.indent_level
 
-    def __pop_context(self):
+    def pop_context(self):
         """
         Walk context down.
 
         """
-        self.__change_buffer(self.HEADER_BUFFER)
+        self.change_buffer(self.HEADER_BUFFER)
 
-        self.__write_variables()
+        self.write_variables()
         self.curr_scope = self.curr_scope.parent
 
         old_writer = self.writer_stack.pop()
@@ -1274,14 +1274,14 @@ class Translator(ASTWalker):
         old_writer.buffers[self.BODY_BUFFER].extend(self.curr_writer.buffers[self.BODY_BUFFER])
         self.curr_writer = old_writer
 
-    def __semicolon(self, stmt, no_newline = False):
+    def semicolon(self, stmt, no_newline = False):
         """
         Write a semicolon (and newline) for all statements except the ones
         in NO_SEMICOLON.
 
         """
         if stmt.__class__.__name__ not in self.NO_SEMICOLON:
-            self.__write(";")
+            self.write(";")
 
     def exe_node(self, node):
         with self.Executor() as exe:
@@ -1299,7 +1299,7 @@ class Translator(ASTWalker):
                     self.visit(stmt)
                     continue
                 self.visit(stmt)
-                self.__semicolon(stmt)
+                self.semicolon(stmt)
         return exe.result
 
     def exe_first_differs(self, body, first_text=None, rest_text=None, do_visit=None):
@@ -1312,10 +1312,10 @@ class Translator(ASTWalker):
                 if first:
                     first = False
                     if first_text is not None:
-                        self.__write(first_text)
+                        self.write(first_text)
                 else:
                     if rest_text is not None:
-                        self.__write(rest_text)
+                        self.write(rest_text)
                 do_visit(node)
 
         return exe.result
