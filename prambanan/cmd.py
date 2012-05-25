@@ -10,17 +10,10 @@ from prambanan.compiler.utils import ParseError
 
 from prambanan.jsbeautifier import beautify
 from prambanan.compiler import (
-    DirectoryModule, JavascriptModule,
-    PythonModule, files_to_modules,
+    files_to_modules,
     translate)
 from prambanan.compiler.provider import all_providers
 
-
-def usage(argv):
-    cmd = os.path.basename(argv[0])
-    print('usage: %s <config_uri> <watch|clean|build|check>\n'
-          '(example: "%s development.ini clean")' % (cmd, cmd))
-    sys.exit(1)
 
 def construct_parser():
     parser = argparse.ArgumentParser(
@@ -29,15 +22,16 @@ def construct_parser():
     parser.add_argument('files', metavar='f', type=str, nargs='*',
         help='input filenames')
 
-    parser.add_argument("-t", "--type", dest="type",
-        default = "python", type=str,
-        help="job type, python|zpt|import")
     parser.add_argument("-o", "--output",
         type=argparse.FileType('w'), default=sys.stdout,
         help="output file, or std output if empty")
     parser.add_argument("-n", "--namespace", dest="base_namespace",
         default = "", type=str,
         help="base export namespace, something that appends to filename")
+
+    parser.add_argument("-t", "--target", dest="target",
+        default = "", type=str,
+        help="js target")
 
     parser.add_argument("-l", "--locale-languange", dest="locale_language",
         default = None, type=str,
@@ -84,7 +78,7 @@ def walk_imports(import_names, modules):
                 results[name] = value
     return results
 
-def get_py_config(args, filename, output, overridden_types):
+def translate_py_file(args, filename, output, overridden_types):
     base_namespace = args.base_namespace
 
     warnings = {}
@@ -131,7 +125,7 @@ def get_py_config(args, filename, output, overridden_types):
     if os.path.isfile(native_file):
         with open(native_file, "r") as f:
             native = f.readlines()
-    return {
+    config = {
         "namespace": namespace,
         "input_name": base_name,
         "input_lines": lines,
@@ -143,22 +137,27 @@ def get_py_config(args, filename, output, overridden_types):
         "native": native,
         "overridden_types": overridden_types,
         "translator": translator,
+        "target": args.target,
         }
+
+    return translate(config)
 
 def translate_modules(modules, args, output, overridden_types):
     imports = []
+    tmp_out = StringIO() if args.beautify else output
     for module in  modules:
         for type, file in module.files():
             if type == "js":
                 with open(file, "r") as f:
-                    output.write(f.read())
+                    tmp_out.write(f.read())
             elif type == "py":
-                config = get_py_config(args, file, output, overridden_types)
-                file_imports = translate(config)
+                file_imports = translate_py_file(args, file, tmp_out, overridden_types)
                 for imp in file_imports:
                     imports.append(imp)
             else:
                 raise ValueError("type %s is not supported for file %s" % (type % file))
+    if args.beautify:
+        output.write(beautify(tmp_out.getvalue()))
     return imports
 
 def generate_base(out):
@@ -170,9 +169,6 @@ def generate_imports(args, out, import_names, available_modules, overridden_type
     for name, module in used_modules.items():
         sys.stderr.write("generating %s" % name)
         translate_modules([module], args, out, overridden_types)
-
-def translate_and_get_imports(args, output, overridden_types):
-    return translate_modules(files_to_modules(args.files), args, output, overridden_types)
 
 def show_parse_error(e):
     if e.lineno is not None:
@@ -194,24 +190,19 @@ def show_parse_error(e):
 
 def main(argv=sys.argv[1:]):
     parser = construct_parser()
-    args = parser.write_def_args(argv)
+    args = parser.parse_args(argv)
     providers = all_providers()
     modules = dict([ (n,m) for p in providers for n,m in p.get_modules().items()])
     overridden_types = dict([ (n,f) for p in providers for n,f in p.get_overridden_types().items()])
     try:
         translate_out = StringIO() if args.generate_result else open(os.devnull, "w")
-        imports = translate_and_get_imports(args, translate_out, overridden_types)
+        imports = translate_modules(files_to_modules(args.files), args, translate_out, overridden_types)
         if args.generate_base:
             generate_base(args.output)
         if args.generate_imports:
             generate_imports(args, args.output, imports, modules, overridden_types)
         if args.generate_result:
-            result = translate_out.getvalue()
-            if args.beautify:
-                result = beautify(result)
-            args.output.write(result)
-        for imp in imports:
-            print imp
+            args.output.write(translate_out.getvalue())
     except ParseError as e:
         show_parse_error(e)
         return 1
