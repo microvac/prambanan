@@ -1,3 +1,5 @@
+import re
+
 OP_MAP = {
     "+":	("+", 6, True), # chars, precedence, associates
     "-":	("-", 6, True),
@@ -58,6 +60,9 @@ RESERVED_WORDS = [
     "instanceof",
     "typeof",
     ]
+
+IDENTIFIER_RE = re.compile("^[A-Za-z_$][0-9A-Za-z_$]*$")
+
 
 def get_op(op):
     """

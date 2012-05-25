@@ -153,9 +153,6 @@ class Translator(ASTWalker, BufferedWriter):
 
 
 """
-
-    IDENTIFIER_RE = re.compile("^[A-Za-z_$][0-9A-Za-z_$]*$")
-
     LIB_NAME = "prambanan"
 
     def __init__(self, scope, config):
@@ -508,7 +505,7 @@ class Translator(ASTWalker, BufferedWriter):
                 if isinstance(key.value, int):
                     self.write("%d: " % (key.value))
                 else:
-                    if self.IDENTIFIER_RE.match(key.value):
+                    if utils.IDENTIFIER_RE.match(key.value):
                         self.write("%s: " % (key.value))
                     else:
                         self.write("\"%s\": " % (key.value))
@@ -899,7 +896,6 @@ class Translator(ASTWalker, BufferedWriter):
         else:
             raise ValueError("const not recognized")
 
-
     def visit_global(self, g):
         """
         Declares variables as global.
@@ -1025,8 +1021,6 @@ class Translator(ASTWalker, BufferedWriter):
             self.write("".join(w.test.inits))
 
         self.write("while (%s){ %s }" % (test, self.exe_body(w.body)))
-
-
 
     def visit_tryfinally(self, tf):
         self.write("try{ %s } finally { %s }" % (self.exe_body(tf.body, True, True),  self.exe_body(tf.finalbody, True, True)))
