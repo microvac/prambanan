@@ -6,14 +6,14 @@ import gettext
 import pkg_resources
 
 from collections import OrderedDict
+from prambanan.compiler.utils import ParseError
 
 from prambanan.jsbeautifier import beautify
 from prambanan.compiler import (
-    ParseError, DirectoryModule, JavascriptModule,
-    PythonModule, files_to_modules
-)
+    DirectoryModule, JavascriptModule,
+    PythonModule, files_to_modules,
+    translate)
 from prambanan.compiler.provider import all_providers
-from prambanan.compiler.translator import translate_file
 
 
 def usage(argv):
@@ -154,7 +154,7 @@ def translate_modules(modules, args, output, overridden_types):
                     output.write(f.read())
             elif type == "py":
                 config = get_py_config(args, file, output, overridden_types)
-                file_imports = translate_file(config)
+                file_imports = translate(config)
                 for imp in file_imports:
                     imports.append(imp)
             else:
@@ -194,7 +194,7 @@ def show_parse_error(e):
 
 def main(argv=sys.argv[1:]):
     parser = construct_parser()
-    args = parser.parse_args(argv)
+    args = parser.write_def_args(argv)
     providers = all_providers()
     modules = dict([ (n,m) for p in providers for n,m in p.get_modules().items()])
     overridden_types = dict([ (n,f) for p in providers for n,f in p.get_overridden_types().items()])

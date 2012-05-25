@@ -1,5 +1,5 @@
 import ast
-from . import ParseError
+from prambanan.compiler.utils import ParseError
 
 
 class Scope(object):

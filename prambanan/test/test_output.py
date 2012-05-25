@@ -3,7 +3,7 @@ import os
 import subprocess
 
 from StringIO import StringIO
-from prambanan.compiler.translator import  translate_file
+from prambanan.compiler import translate
 from prambanan import jsbeautifier
 from prambanan.test.output_tester import OutputTester
 

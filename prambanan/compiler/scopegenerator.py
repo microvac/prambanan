@@ -1,7 +1,7 @@
 from logilab.astng.utils import ASTWalker
 from logilab.astng import nodes
+from prambanan.compiler.utils import ParseError
 from scope import Scope
-from . import ParseError
 
 
 class ScopeGenerator(ASTWalker):

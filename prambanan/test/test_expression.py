@@ -1,8 +1,8 @@
 import unittest
 import os
 from StringIO import StringIO
+from prambanan.compiler import translate
 
-from prambanan.compiler.translator import  translate_file
 from prambanan import jsbeautifier
 
 dir = os.path.dirname(os.path.realpath(__file__))
@@ -36,7 +36,7 @@ class TestExpression(unittest.TestCase):
                 if ext == ".py":
                     print "processing %s.py" % name
                     config = self.create_config(filename)
-                    translate_file(config)
+                    translate(config)
                     result = jsbeautifier.beautify(config["output"].getvalue(), js_opt)
                     resultname = name+".js"
                     with open(os.path.join(result_dir, resultname), "w") as f:

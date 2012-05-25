@@ -4,7 +4,7 @@ import subprocess
 import pkg_resources
 
 from StringIO import StringIO
-from prambanan.compiler.translator import  translate_file
+from prambanan.compiler import translate
 from prambanan import jsbeautifier
 
 js_opt = jsbeautifier.BeautifierOptions()
@@ -48,7 +48,7 @@ class OutputTester(object):
 
     def py_to_js(self, name):
         config = self.create_prambanan_config(name+".py")
-        translate_file(config)
+        translate(config)
         result = jsbeautifier.beautify(config["output"].getvalue(), js_opt)
         result_name = name+".js"
         with open(os.path.join(self.gen_dir, result_name), "w") as f:
