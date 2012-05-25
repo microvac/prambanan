@@ -163,7 +163,7 @@ def translate_string(input,namespace="", target=None):
 
     direct_handlers = {"module": py_visit_module}
     moo = targets.get_translator(target)(scope_gen.root_scope, direct_handlers, config)
-    moo.visit(tree)
+    moo.walk(tree)
     return config["output"].getvalue()
 
 
@@ -176,7 +176,7 @@ def translate(config):
         direct_handlers = {"module": py_visit_module}
         target = config.get("target", None)
         moo = targets.get_translator(target)(scope_gen.root_scope, direct_handlers, config)
-        moo.visit(tree)
+        moo.walk(tree)
         return scope_gen.root_scope.imported_modules()
     except ParseError as e:
         e.input_lines = config["input_lines"]

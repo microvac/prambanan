@@ -116,7 +116,7 @@ class JSDefaultTranslator(BaseTranslator):
             self.write("new ")
 
         if not method_written:
-            self.visit(c.func)
+            self.walk(c.func)
         self.write("(")
         self.write_call_args(c)
         self.write(")")
@@ -160,11 +160,11 @@ class JSDefaultTranslator(BaseTranslator):
             self.write("%s(%s, %s)" % (pow_helper, self.exe_node(o.left), self.exe_node(o.right)))
         else:
             chars, prec, assoc = utils.get_op_cpa(o.op)
-            self.visit(o.left)
+            self.walk(o.left)
             self.write(" %s " % (chars))
             eprec, eassoc = utils.get_expr_pa(o.right)
             if eprec >= prec: self.write("(")
-            self.visit(o.right)
+            self.walk(o.right)
             if eprec >= prec: self.write(")")
 
     def visit_boolop(self, o):
@@ -181,7 +181,7 @@ class JSDefaultTranslator(BaseTranslator):
                 self.write(" %s " % (utils.get_op(o.op)))
             eprec, eassoc = utils.get_expr_pa(expr)
             if eprec >= prec: self.write("(")
-            self.visit(expr)
+            self.walk(expr)
             if eprec >= prec: self.write(")")
 
     def visit_unaryop(self, o):
@@ -193,7 +193,7 @@ class JSDefaultTranslator(BaseTranslator):
         prec, assoc = utils.get_expr_pa(o.operand)
         if isinstance(o.operand, nodes.Const): prec = 3
         if prec > 2: self.write("(")
-        self.visit(o.operand)
+        self.walk(o.operand)
         if prec > 2: self.write(")")
 
     def visit_compare(self, c):
@@ -262,7 +262,7 @@ class JSDefaultTranslator(BaseTranslator):
                         self.write("%s: " % (key.value))
                     else:
                         self.write("\"%s\": " % (key.value))
-                self.visit(value)
+                self.walk(value)
         self.write("{%s}" % items.result)
 
     def visit_subscript(self, s):
@@ -336,12 +336,12 @@ class JSDefaultTranslator(BaseTranslator):
             tuple = a.targets[0]
             for i in range(0, len(target.elts)):
                 elt = tuple.elts[i]
-                self.visit(elt)
+                self.walk(elt)
                 self.write(" = _source[%d]; " % i)
             self.write("})(")
         else:
             for target in a.targets:
-                self.visit(target)
+                self.walk(target)
                 if isinstance(target, nodes.Subscript) and not target.simple:
                     self.write(", ")
                 else:
@@ -350,7 +350,7 @@ class JSDefaultTranslator(BaseTranslator):
         if isinstance(a.value, nodes.Tuple):
             self.write("[%s]" % self.exe_first_differs(a.value.elts, rest_text=","))
         else:
-            self.visit(a.value)
+            self.walk(a.value)
 
         if is_target_tuple:
             self.write(")")
@@ -362,7 +362,7 @@ class JSDefaultTranslator(BaseTranslator):
         Translate an assignment operator.
 
         """
-        self.visit(a.target)
+        self.walk(a.target)
         if isinstance(a.value, nodes.Const) and a.value == 1:
             if isinstance(a.op, nodes.Add):
                 self.write("++")
@@ -371,7 +371,7 @@ class JSDefaultTranslator(BaseTranslator):
                 self.write("--")
                 return
         self.write(" %s= " % (utils.get_op(a.op[:-1])))
-        self.visit(a.value)
+        self.walk(a.value)
 
     def visit_for(self, f):
         """
@@ -452,7 +452,7 @@ class JSDefaultTranslator(BaseTranslator):
                 else:
                     cls_only.append(stmt.name)
 
-            self.visit(stmt)
+            self.walk(stmt)
             self.write_semicolon(stmt);
 
         all_attrs = set(exported).difference(set(proto_only)).difference(set(cls_only))
@@ -635,7 +635,7 @@ class JSDefaultTranslator(BaseTranslator):
         self.write("print(%s)" % self.exe_first_differs(p.values, rest_text=","))
 
     def visit_discard(self, v):
-        self.visit(v.value)
+        self.walk(v.value)
 
     def visit_const(self, t):
         if isinstance(t.value, str):
@@ -696,7 +696,7 @@ class JSDefaultTranslator(BaseTranslator):
         """
         for target in d.targets:
             if isinstance(target, nodes.Subscript):
-                self.visit(target)
+                self.walk(target)
             else:
                 self.write("delete %s" % self.exe_node(target))
 

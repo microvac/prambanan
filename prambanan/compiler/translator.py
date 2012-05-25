@@ -16,11 +16,11 @@ class BufferedWriter(object):
 
     BUFFER_NAMES = [HEADER_BUFFER, BODY_BUFFER, FOOTER_BUFFER]
 
-    def __init__(self, out, visit):
+    def __init__(self, out, walk):
         self.writer_stack = []
         self.out = out
         self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
-        self.__visit = visit
+        self.__walk = walk
 
         class Executor(object):
             def __init__(cur):
@@ -41,7 +41,7 @@ class BufferedWriter(object):
 
     def exe_node(self, node):
         with self.Executor() as exe:
-            self.__visit(node)
+            self.__walk(node)
         return exe.result
 
     def exe_body(self, body, skip_docstring=False, skip_global=False):
@@ -52,15 +52,15 @@ class BufferedWriter(object):
                     continue # Skip docstring
                 """
                 if skip_global and isinstance(stmt, nodes.Global): # The `global` statement is invisible
-                    self.__visit(stmt)
+                    self.__walk(stmt)
                     continue
-                self.__visit(stmt)
+                self.__walk(stmt)
                 self.write_semicolon(stmt)
         return exe.result
 
     def exe_first_differs(self, body, first_text=None, rest_text=None, do_visit=None):
         if do_visit is None:
-            do_visit = lambda node: self.__visit(node)
+            do_visit = lambda node: self.__walk(node)
 
         with self.Executor() as exe:
             first = True
@@ -101,7 +101,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
 
     def __init__(self, scope, direct_visitors, config):
         ASTWalker.__init__(self, self)
-        BufferedWriter.__init__(self, config["output"], self.visit)
+        BufferedWriter.__init__(self, config["output"], self.walk)
         self.mod_scope = scope
         self.curr_scope = None
 
@@ -121,6 +121,17 @@ class BaseTranslator(BufferedWriter, ASTWalker):
         self.public_identifiers = []
         self.translated_names = {}
         self.util_names = {}
+
+    def walk(self, node, _done=None):
+        """walk on the tree from <node>, getting callbacks from handler"""
+        if _done is None:
+            _done = set()
+        if node in _done:
+            raise AssertionError((id(node), node, node.parent))
+        _done.add(node)
+        self.visit(node)
+        self.leave(node)
+        assert node.parent is not node
 
     def visit(self, node):
         kind = node.__class__.__name__.lower()
@@ -312,7 +323,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
                 self.write("%s({%s})" % (make_kwargs, kwargs))
                 break
             else:
-                self.visit(arg)
+                self.walk(arg)
             i += 1
 
         if args.starargs is not None:
@@ -349,7 +360,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
                 first = False
             else:
                 self.write(", ")
-            self.visit(arg)
+            self.walk(arg)
 
         if args.vararg is not None:
             if first:
