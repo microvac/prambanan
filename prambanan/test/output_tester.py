@@ -79,3 +79,31 @@ class OutputTester(object):
                     js =  self.execute(self.create_rhino_args(name))
                     py =  self.execute(self.create_python_args(name))
                     yield (js, py)
+
+def make_test_method(tester, name, print_output):
+    def result(self):
+        print "------------------"
+        print "executing "+name
+        tester.py_to_js(name)
+        js =  tester.execute(tester.create_rhino_args(name))
+        py =  tester.execute(tester.create_python_args(name))
+        if print_output:
+            print "javascript"
+            print js
+            print "python"
+            print py
+        self.assertEquals(js, py)
+    return result
+
+def directory_tester(src_dir, print_output=False):
+    tester = OutputTester(src_dir)
+    def dec(cls):
+        if src_dir is not None:
+            for dirname, dirnames, filenames in os.walk(src_dir):
+                for filename in filenames:
+                    name, ext = os.path.splitext(filename)
+                    if ext == ".py":
+                        setattr(cls, "test_file_"+name,  make_test_method(tester, name, print_output))
+        return cls
+    return dec
+
