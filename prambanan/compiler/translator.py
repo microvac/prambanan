@@ -1,45 +1,14 @@
-#!/usr/bin/env python
-
-#
-# PyCow - Python to JavaScript with MooTools translator
-# Copyright 2009 Patrick Schneider <patrick.p2k.schneider@gmail.com>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licki\;enses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-
-#
-# Some Notes:
-#
-# PyCow does a limited type inference, so it can distinguish function calls
-# from class instantiations. However, some conditions can prevent a correct
-# evaluation.
-#
-# PyCow cannot parse comments but can parse docstrings.
-#
-# No kwargs.
-#
 from logilab.astng import nodes,  builder
 from logilab.astng.exceptions import UnresolvableName
 from logilab.astng.utils import ASTWalker
 
-import utils
 
 import gettext
-import simplejson, re, random
+import simplejson, re
 from StringIO import StringIO
-import inspect
 import sys
 
+import utils
 from .scopegenerator import ScopeGenerator
 from .scope import Scope
 from . import ParseError, Writer
@@ -1202,16 +1171,7 @@ class Translator(ASTWalker, BufferedWriter):
             if isinstance(dec, nodes.Name):
                 if dec.name in ["staticmethod", "JSNoOp"] :
                     continue
-                header = "%s" % dec.name
-            elif isinstance(dec, nodes.CallFunc):
-                with self.Executor() as call:
-                    self.visit(dec.func)
-                    self.write("(")
-                    self.parse_call_args(dec)
-                    self.write(")")
-                header = call.result
-            else:
-                self.raise_error("This class decorator is not supported. Only decorators of pycow.decorators are supported",dec)
+            header = self.exe_node(dec)
             current = "%s(%s)" % (header, current)
 
         self.write(";%s = %s" % (stmt.name, current))
