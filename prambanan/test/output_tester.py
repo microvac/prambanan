@@ -15,8 +15,8 @@ class OutputTester(object):
     dir = pkg_resources.resource_filename("prambanan", "test/")
     js_dir = pkg_resources.resource_filename("prambanan", "js/")
 
-    rhino_path = os.path.join(dir, "js.jar")
-    run_js = os.path.join(dir, "run.js")
+    rhino_path = os.path.join(dir, "rhino.jar")
+    run_js = os.path.join(dir, "run_rhino.js")
 
     def __init__(self, src_dir, included_js=[]):
         self.src_dir = src_dir
