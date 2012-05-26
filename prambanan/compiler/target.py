@@ -52,6 +52,20 @@ class JSDefaultTranslator(BaseTranslator):
                 module = self.namespace
             else:
                 module = self.namespace+"."+module
+        for name,asname in i.names:
+            if name == "*":
+                if module in [self.namespace+".native", self.namespace+"_native"]:
+                    attrs = module.split(".")[1:]
+                    m = __import__(module)
+                    for attr in attrs:
+                        m = getattr(m, attr)
+                    for name in dir(m):
+                        if not name.startswith("__"):
+                            self.public_identifiers.append(name)
+                    self.write("".join(self.native))
+                    return
+                else:
+                    self.raise_error("import * except native is not supported", i)
         modulevarname = module if "." not in module else module[0:module.find(".")]
         modulevarname = self.curr_scope.generate_variable("_m_"+modulevarname)
         self.write("%s = __import__('%s'); " % (modulevarname, module))

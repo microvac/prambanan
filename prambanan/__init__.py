@@ -1,9 +1,5 @@
-import prambanan.native as native
 from prambanan.jslib import underscore
-
-is_server = native.is_server
-
-items = underscore.items
+from prambanan.native import *
 
 def JS(fn):
     return fn

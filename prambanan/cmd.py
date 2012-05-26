@@ -88,9 +88,11 @@ def translate_py_file(args, filename, output, overridden_types):
         warnings["import"] = True
 
     base_name = os.path.basename(filename)
-    dir_name = os.path.dirname(filename)
+    dir_name = os.path.dirname(os.path.abspath(filename))
     name, ext = os.path.splitext(base_name)
-    namespace = name if base_namespace == "" else "%s.%s" % (base_namespace, name)
+    module_name = name if name != "__init__" else os.path.basename(dir_name)
+
+    namespace = module_name if base_namespace == "" else "%s.%s" % (base_namespace, module_name)
 
     translator = None
     if args.locale_language is not None:
@@ -118,7 +120,7 @@ def translate_py_file(args, filename, output, overridden_types):
     input = StringIO("".join(lines)).read()
 
     native = None
-    if base_name == "__init__":
+    if base_name == "__init__.py":
         native_file = os.path.join(dir_name, "native.js")
     else:
         native_file = os.path.join(dir_name, name+"_native.js")

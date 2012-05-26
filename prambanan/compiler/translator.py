@@ -113,6 +113,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
         self.warnings = config.get("warnings", {})
         self.bare = config.get("bare", False)
         self.translator = config.get("translator", gettext.NullTranslations().gettext)
+        self.native = config.get("native", None)
 
         self.use_throw_helper = config.get("use_throw_helper", False)
         self.overridden_types = config.get("overridden_types", {})

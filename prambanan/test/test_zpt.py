@@ -1,7 +1,7 @@
 import unittest
 import os
 from StringIO import StringIO
-from prambanan.zpt.ptparser import PTParser
+from prambanan.zpt.compiler.ptparser import PTParser
 
 dir = os.path.dirname(os.path.realpath(__file__))
 

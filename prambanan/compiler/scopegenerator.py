@@ -115,6 +115,9 @@ class ScopeGenerator(ASTWalker):
                 module = self.namespace+"."+module
             level -= 1
         for name,asname in i.names:
+            if name == "*":
+                if module in [self.namespace+".native", self.namespace+"_native"]:
+                    continue
             varname = asname if asname else name
             self.current_scope.declare_variable(varname)
             self.current_scope.imports[varname] = (module, name)

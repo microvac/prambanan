@@ -1,4 +1,2 @@
-prambanan.exports("prambanan.native", {
-    is_server: false,
-    items: _.items
-});
+var is_server= false;
+var items= _.items;
