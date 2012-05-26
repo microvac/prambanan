@@ -1,7 +1,8 @@
 (function(){
-    var prambanan = this.prambanan = {};
-    var builtins = {};
+    var root = this;
+    var prambanan = root.prambanan = {};
     var helpers = prambanan.helpers = {};
+    var builtins = {};
     var slice = Array.prototype.slice;
     /*
      Module import and exports
@@ -377,95 +378,6 @@
     object.extend = Backbone.Model.extend;
     prambanan.exports("__builtin__", builtins);
 
-    /* object, generated  from builtins.py */
-    var ArithmeticError, AttributeError, BaseException, Exception, IndexError, KeyError, LookupError, NameError,
-        NotImplementedError, RuntimeError, StandardError, SystemError, TypeError, ValueError, ZeroDivisionError;
-
-
-    function t___builtin___BaseException(){
-        this.__init__.apply(this, arguments);
-    }
-    BaseException = object.extend({constructor: t___builtin___BaseException,
-        __init__: function (message) {
-            if(Error.captureStackTrace)
-                Error.captureStackTrace(this);
-            this.message = message;
-        }
-    });
-
-    function t___builtin___Exception(){ this.__init__.apply(this, arguments); }
-    Exception = BaseException.extend({constructor: t___builtin___Exception/* pass */
-    });
-
-    function t___builtin___StandardError(){ this.__init__.apply(this, arguments); }
-    StandardError = Exception.extend({constructor: t___builtin___StandardError/* pass */
-    });
-
-    function t___builtin___AttributeError(){ this.__init__.apply(this, arguments); }
-    AttributeError = StandardError.extend({constructor: t___builtin___AttributeError/* pass */
-    });
-
-    function t___builtin___TypeError(){ this.__init__.apply(this, arguments); }
-    TypeError = StandardError.extend({constructor: t___builtin___TypeError/* pass */
-    });
-
-    function t___builtin___ValueError(){ this.__init__.apply(this, arguments); }
-    ValueError = StandardError.extend({constructor: t___builtin___ValueError/* pass */
-    });
-
-    function t___builtin___NameError(){ this.__init__.apply(this, arguments); }
-    NameError = StandardError.extend({constructor: t___builtin___NameError/* pass */
-    });
-
-    function t___builtin___SystemError(){ this.__init__.apply(this, arguments); }
-    SystemError = StandardError.extend({constructor: t___builtin___SystemError/* pass */
-    });
-
-    function t___builtin___LookupError(){ this.__init__.apply(this, arguments); }
-    LookupError = StandardError.extend({constructor: t___builtin___LookupError/* pass */
-    });
-
-    function t___builtin___KeyError(){ this.__init__.apply(this, arguments); }
-    KeyError = LookupError.extend({constructor: t___builtin___KeyError/* pass */
-    });
-
-    function t___builtin___IndexError(){ this.__init__.apply(this, arguments); }
-    IndexError = LookupError.extend({constructor: t___builtin___IndexError/* pass */
-    });
-
-    function t___builtin___ArithmeticError(){ this.__init__.apply(this, arguments); }
-    ArithmeticError = StandardError.extend({constructor: t___builtin___ArithmeticError/* pass */
-    });
-
-    function t___builtin___ZeroDivisionError(){ this.__init__.apply(this, arguments); }
-    ZeroDivisionError = ArithmeticError.extend({constructor: t___builtin___ZeroDivisionError/* pass */
-    });
-
-    function t___builtin___RuntimeError(){ this.__init__.apply(this, arguments); }
-    RuntimeError = StandardError.extend({constructor: t___builtin___RuntimeError/* pass */
-    });
-
-    function t___builtin___NotImplementedError(){ this.__init__.apply(this, arguments); }
-    NotImplementedError = RuntimeError.extend({constructor: t___builtin___NotImplementedError/* pass */
-    });
-
-    prambanan.exports('__builtin__',{
-        ArithmeticError: ArithmeticError,
-        AttributeError: AttributeError,
-        BaseException: BaseException,
-        Exception: Exception,
-        IndexError: IndexError,
-        KeyError: KeyError,
-        LookupError: LookupError,
-        NameError: NameError,
-        NotImplementedError: NotImplementedError,
-        RuntimeError: RuntimeError,
-        StandardError: StandardError,
-        SystemError: SystemError,
-        TypeError: TypeError,
-        ValueError: ValueError,
-        ZeroDivisionError: ZeroDivisionError
-    });
 
     /*
      Monkey Paaaaatches

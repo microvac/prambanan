@@ -11,13 +11,13 @@ from prambanan.compiler.utils import ParseError
 from prambanan.jsbeautifier import beautify
 from prambanan.compiler import (
     files_to_modules,
-    translate)
+    translate, JavascriptModule, PythonModule)
 from prambanan.compiler.provider import all_providers
 
 
 def construct_parser():
     parser = argparse.ArgumentParser(
-        description="Compiles python to javascript.")
+        description="Translate python to javascript.")
 
     parser.add_argument('files', metavar='f', type=str, nargs='*',
         help='input filenames')
@@ -52,8 +52,8 @@ def construct_parser():
         help="don't generate result")
     parser.add_argument("--generate-imports", action="store_true",
         help="also generate imported module")
-    parser.add_argument("--generate-base", action="store_true",
-        help="also generate base library")
+    parser.add_argument("--generate-runtime", action="store_true",
+        help="also generate runtime library")
 
     parser.add_argument("--type-warning", action="store_true",
         help="warn when not finding type")
@@ -61,6 +61,23 @@ def construct_parser():
         help="warn when cannot resolve import")
 
     return parser
+
+parser = construct_parser()
+
+def parse_args(argv):
+    args = parser.parse_args(argv)
+    args.namespace = None
+    return args
+
+def copy_args(source):
+    args = parse_args("")
+    args.__dict__.update(source.__dict__)
+    return args
+
+def create_args(**kwargs):
+    args = parse_args("")
+    args.__dict__.update(dict(kwargs))
+    return args
 
 def walk_import(import_name, modules):
     if import_name in modules:
@@ -92,7 +109,10 @@ def translate_py_file(args, filename, output, overridden_types):
     name, ext = os.path.splitext(base_name)
     module_name = name if name != "__init__" else os.path.basename(dir_name)
 
-    namespace = module_name if base_namespace == "" else "%s.%s" % (base_namespace, module_name)
+    if args.namespace is None:
+        namespace = module_name if base_namespace == "" else "%s.%s" % (base_namespace, module_name)
+    else:
+        namespace = args.namespace
 
     translator = None
     if args.locale_language is not None:
@@ -146,25 +166,44 @@ def translate_py_file(args, filename, output, overridden_types):
 
 def translate_modules(modules, args, output, overridden_types):
     imports = []
-    tmp_out = StringIO() if args.beautify else output
     for module in  modules:
         for type, file in module.files():
             if type == "js":
                 with open(file, "r") as f:
-                    tmp_out.write(f.read())
+                    output.write(f.read())
             elif type == "py":
+                tmp_out = StringIO() if args.beautify else output
                 file_imports = translate_py_file(args, file, tmp_out, overridden_types)
                 for imp in file_imports:
                     imports.append(imp)
+                if args.beautify:
+                    output.write(beautify(tmp_out.getvalue()))
             else:
                 raise ValueError("type %s is not supported for file %s" % (type % file))
-    if args.beautify:
-        output.write(beautify(tmp_out.getvalue()))
     return imports
 
-def generate_base(out):
-    #used_modules = walk_imports(import_names, available_modules)
-    pass
+
+def generate_runtime(source_args, out):
+    base_js_lib = lambda name: pkg_resources.resource_filename("prambanan", "js/lib/"+name)
+    base_js = lambda name: pkg_resources.resource_filename("prambanan", "js/"+name)
+    base_py = lambda name: pkg_resources.resource_filename("prambanan", name)
+
+    base_modules = []
+    base_modules.append(JavascriptModule([
+        base_js_lib("zepto.min.js"),
+        base_js_lib("underscore.js"),
+        base_js_lib("backbone.js"),
+        base_js("prambanan.js"),
+        ]))
+    base_modules.append(PythonModule(base_py("__init__.py")))
+    translate_modules(base_modules, source_args, out, {})
+
+    ex_builtin_modules = []
+    ex_builtin_modules.append(PythonModule(base_py("pylib/builtins.py")))
+    args = copy_args(source_args)
+    args.namespace = "__builtin__"
+    translate_modules(ex_builtin_modules, args, out, {})
+
 
 def generate_imports(args, out, import_names, available_modules, overridden_types):
     used_modules = walk_imports(import_names, available_modules)
@@ -191,16 +230,15 @@ def show_parse_error(e):
     sys.stderr.write("\n")
 
 def main(argv=sys.argv[1:]):
-    parser = construct_parser()
-    args = parser.parse_args(argv)
+    args = parse_args(argv)
     providers = all_providers()
     modules = dict([ (n,m) for p in providers for n,m in p.get_modules().items()])
     overridden_types = dict([ (n,f) for p in providers for n,f in p.get_overridden_types().items()])
     try:
         translate_out = StringIO() if args.generate_result else open(os.devnull, "w")
         imports = translate_modules(files_to_modules(args.files), args, translate_out, overridden_types)
-        if args.generate_base:
-            generate_base(args.output)
+        if args.generate_runtime:
+            generate_runtime(args, args.output)
         if args.generate_imports:
             generate_imports(args, args.output, imports, modules, overridden_types)
         if args.generate_result:

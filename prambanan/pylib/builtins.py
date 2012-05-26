@@ -1,5 +1,7 @@
 class BaseException(object): 
     def __init__(self, message):
+        if Error.captureStackTrace:
+            Error.captureStackTrace(self);
         self.message = message;
 
 class Exception(BaseException): pass
