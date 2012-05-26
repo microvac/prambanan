@@ -1,179 +1,139 @@
+from exceptions import Exception
+import re
 
-#
-# PyCow - Python to JavaScript with MooTools translator
-# Copyright 2009 Patrick Schneider <patrick.p2k.schneider@gmail.com>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
+OP_MAP = {
+    "+":	("+", 6, True), # chars, precedence, associates
+    "-":	("-", 6, True),
+    "*":	("*", 5, True),
+    "/":	("/", 5, True),
+    #floor div"/":	("/", 5, True),
+    "%":	("%", 5, True),
+    "**":	("", 5, True),
+    #"Pow":	?,
+    "<<":	("<<", 7, True),
+    ">>":	(">>", 7, True),
+    "|":	("|", 12, True),
+    "^":	("^", 11, True),
+    "&":	("&", 10, True),
 
-#
-# This file contains some compatibility classes which implement parts of
-# MooTool's functionality.
-#
+    #"uSub":	("-", 4, False),
+    #"UAdd": ("+", 4, False),
 
-from types import FunctionType, ClassType
-import copy, re, simplejson
+    "and":	("&&", 13, True),
+    "or":	("||", 14, True),
 
-__all__ = ["Events", "Options", "Array", "Hash", "JSON"]
+    "not":	("!", 4, False),
+    "is not":	("!=", 4, False),
 
-class Events(object):
-	def addEvent(self, type, fn, internal = False):
-		type = Events.removeOn(type)
-		evts = getattr(self, "$events", None)
-		if evts == None:
-			evts = {}
-			setattr(self, "$events", evts)
-		if not evts.has_key(type):
-			evts[type] = set()
-		evts[type].add(fn)
-		if internal: fn.internal = True
-		return self
+    "==":	("===", 9, True),
+    "is":	("===", 9, True),
+    "!=":("!==", 9, True),
+    "<":	("<", 8, True),
+    "<=":	("<=", 8, True),
+    ">":	(">", 8, True),
+    ">=":	(">=", 8, True),
+    }
 
-	def addEvents(self, events):
-		for type in events.iterkeys():
-			self.addEvent(type, events[type])
-		return self
+NO_SEMICOLON = [
+    "Global",
+    "If",
+    "While",
+    "For",
+    "TryExcept",
+    "TryFinally",
+    "Pass",
+    ]
 
-	def fireEvent(self, type, args = None, delay = None):
-		type = Events.removeOn(type)
-		evts = getattr(self, "$events", None)
-		if evts == None or not evts.has_key(type):
-			return self
-		
-		for fn in evts[type]:
-			if isinstance(args, list):
-				fn(*args)
-			elif args != None:
-				fn(args)
-			else:
-				fn()
-			#fn.create({'bind': this, 'delay': delay, 'arguments': args})()
-		
-		return self
+RESERVED_WORDS = [
+    "null",
+    "undefined",
+    "true",
+    "false",
+    "new",
+    "var",
+    "switch",
+    "case",
+    "function",
+    "this",
+    "default",
+    "throw",
+    "delete",
+    "instanceof",
+    "typeof",
+    ]
 
-	def removeEvent(self, type, fn):
-		type = Events.removeOn(type)
-		evts = getattr(self, "$events", None)
-		if evts == None or not evts.has_key(type):
-			return self
-		
-		if not getattr(fn, "internal", False):
-			evts[type].remove(fn)
-		return self
+IDENTIFIER_RE = re.compile("^[A-Za-z_$][0-9A-Za-z_$]*$")
 
-	def removeEvents(self, type):
-		evts = getattr(self, "$events", None)
-		if evts == None:
-			return self
-		for e in evts.iterkeys():
-			if type != e: continue
-			for fn in evts[e]:
-				self.removeEvent(e, fn)
-		return self
 
-	@staticmethod
-	def removeOn(string):
-		return re.sub(r"(?i)^on([A-Z])", lambda match: match.group(1).lower(), string)
+def get_op(op):
+    """
+    Translates an operator.
 
-class Options(object):
-	def setOptions(self, options = {}):
-		if getattr(self, "options", None) == None: return self
-		self.options.update(options)
-		if getattr(self, "addEvent", None): return self
-		for option in self.options.iterkeys():
-			if not isinstance(self.options[option], FunctionType) or not re.match(r"(?i)^on([A-Z])", option): continue
-			self.addEvent(option, self.options[option])
-			del self.options[option]
-		return self
+    """
+    return OP_MAP[op][0]
 
-class Array(list):
-	@property
-	def length(self):
-		return self.__len__()
-	
-	def contains(self, value):
-		return self.__contains__(value)
-	
-	def sort(self):
-		list.sort(self)
-		return self
-	
-	def reverse(self):
-		list.reverse(self)
-		return self
-	
-	def indexOf(self, value):
-		try:
-			return self.index(value)
-		except ValueError:
-			return -1
-	
-	def lastIndexOf(self, value):
-		l = list(self)
-		l.reverse()
-		try:
-			return self.__len__() - l.index(value)
-		except ValueError:
-			return -1
-	
-	def push(self, value):
-		self.append(value)
-	
-	def erase(self, value):
-		try:
-			while True:
-				self.remove(value)
-		except ValueError:
-			pass
-		return self
 
-class Hash(dict):
-	def set(self, key, value):
-		self[key] = value
-	
-	def get(self, key):
-		try:
-			return self[key]
-		except KeyError:
-			return None
-	
-	def has(self, key):
-		return self.has_key(key)
+def get_op_cpa(op):
+    """
+    Get operator chars, precedence and associativity.
 
-	def getValues(self):
-		return self.values()
-	
-	def getKeys(self):
-		return self.keys()
-	
-	def getClean(self):
-		return dict(self)
-	
-	def extend(self, other):
-		self.update(other)
-	
-	def erase(self, key):
-		try:
-			del self[key]
-		except:
-			pass
+    """
+    return OP_MAP[op]
 
-class JSON(object):
-	def encode(self, obj):
-		return simplejson.dumps(obj)
-	
-	def decode(self, string, secure=None):
-		return simplejson.loads(string)
+def get_expr_pa(expr):
+    """
+    Get the precedence and associativity of an expression.
 
-# Singleton
-JSON = JSON()
+    """
+    name = expr.__class__.__name__
+    if name in ("BoolOp", "BinOp", "UnaryOp"):
+        return get_op_cpa(expr.op)[1:]
+    elif name in ("Lambda", "Dict", "List", "Num", "Str", "Name", "Const"):
+        return (1, False)
+    elif name == "IfExp":
+        return (15, False)
+    elif name in ("Getattr", "Subscript"):
+        return (1, True)
+    elif name in ("CallFunc", "Repr"):
+        return (2, True)
+    elif name == "Compare":
+        return (8, True)
+
+
+class ParseError(Exception):
+    """
+    This exception is raised if the parser detects fatal errors.
+
+    """
+    def __init__(self, value, lineno=None, col_offset=0, is_syntax_error = False, input_lines=None, input_name=None):
+        self.value = value
+        self.lineno = lineno
+        self.col_offset = col_offset
+        self.is_syntax_error = is_syntax_error
+        if input_lines is None:
+            input_lines = []
+        self.input_lines = input_lines
+        self.input_name = input_name
+
+    def __str__(self):
+        msg = "%s: %s" % ("Syntax Error" if self.is_syntax_error else "Translation Error", self.value)
+        return msg
+
+
+class Writer(object):
+    def __init__(self, default_buffer_name, buffer_names):
+        self.buffers = dict([(buffer, []) for buffer in buffer_names])
+        self.buffer = self.buffers[default_buffer_name]
+        self.indent_level = 0
+
+    def change_buffer(self, name):
+        self.buffer = self.buffers[name]
+
+    def write(self, s):
+        self.buffer.append(s)
+
+    def indent(self, updown = True):
+        if updown:
+            self.indent_level += 1
+        else:
+            self.indent_level -= 1

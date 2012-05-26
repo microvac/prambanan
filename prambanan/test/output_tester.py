@@ -4,7 +4,7 @@ import subprocess
 import pkg_resources
 
 from StringIO import StringIO
-from prambanan.compiler.pytranslator import  translate_file
+from prambanan.compiler import translate
 from prambanan import jsbeautifier
 
 js_opt = jsbeautifier.BeautifierOptions()
@@ -15,8 +15,8 @@ class OutputTester(object):
     dir = pkg_resources.resource_filename("prambanan", "test/")
     js_dir = pkg_resources.resource_filename("prambanan", "js/")
 
-    rhino_path = os.path.join(dir, "js.jar")
-    run_js = os.path.join(dir, "run.js")
+    rhino_path = os.path.join(dir, "rhino.jar")
+    run_js = os.path.join(dir, "run_rhino.js")
 
     def __init__(self, src_dir, included_js=[]):
         self.src_dir = src_dir
@@ -48,7 +48,7 @@ class OutputTester(object):
 
     def py_to_js(self, name):
         config = self.create_prambanan_config(name+".py")
-        translate_file(config)
+        translate(config)
         result = jsbeautifier.beautify(config["output"].getvalue(), js_opt)
         result_name = name+".js"
         with open(os.path.join(self.gen_dir, result_name), "w") as f:
@@ -79,3 +79,31 @@ class OutputTester(object):
                     js =  self.execute(self.create_rhino_args(name))
                     py =  self.execute(self.create_python_args(name))
                     yield (js, py)
+
+def make_test_method(tester, name, print_output):
+    def result(self):
+        print "------------------"
+        print "executing "+name
+        tester.py_to_js(name)
+        js =  tester.execute(tester.create_rhino_args(name))
+        py =  tester.execute(tester.create_python_args(name))
+        if print_output:
+            print "javascript"
+            print js
+            print "python"
+            print py
+        self.assertEquals(js, py)
+    return result
+
+def directory_tester(src_dir, print_output=False):
+    tester = OutputTester(src_dir)
+    def dec(cls):
+        if src_dir is not None:
+            for dirname, dirnames, filenames in os.walk(src_dir):
+                for filename in filenames:
+                    name, ext = os.path.splitext(filename)
+                    if ext == ".py":
+                        setattr(cls, "test_file_"+name,  make_test_method(tester, name, print_output))
+        return cls
+    return dec
+

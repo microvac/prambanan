@@ -1,2 +1,0 @@
-def ea():
-    print "humhum"

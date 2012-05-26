@@ -1,4 +1,10 @@
+from StringIO import StringIO
+from exceptions import SyntaxError
+from logilab.astng import nodes, builder
 import os
+from prambanan.compiler.scopegenerator import ScopeGenerator
+from prambanan.compiler.target import targets
+from prambanan.compiler.utils import ParseError
 
 class Module(object):
     def __init__(self, dependencies):
@@ -59,42 +65,122 @@ def files_to_modules(files):
             else:
                 raise ValueError("extension not recognized: %s for file %s" % (ext, file))
 
-class ParseError(Exception):
+
+def py_visit_module(self, mod):
     """
-    This exception is raised if the parser detects fatal errors.
+    Initial node.
+    There is and can be only one Module node.
 
     """
-    def __init__(self, value, lineno=None, col_offset=0, is_syntax_error = False, input_lines=None, input_name=None):
-        self.value = value
-        self.lineno = lineno
-        self.col_offset = col_offset
-        self.is_syntax_error = is_syntax_error
-        if input_lines is None:
-            input_lines = []
-        self.input_lines = input_lines
-        self.input_name = input_name
+    self.curr_scope = self.mod_scope
 
-    def __str__(self):
-        msg = "%s: %s" % ("Syntax Error" if self.is_syntax_error else "Translation Error", self.value)
-        return msg
+    if not self.bare:
+        self.change_buffer(self.HEADER_BUFFER)
+        if mod.doc:
+            self.write_docstring(self.mod_scope.docstring)
 
-class Writer(object):
-    def __init__(self, default_buffer_name, buffer_names):
-        self.buffers = dict([(buffer, []) for buffer in buffer_names])
-        self.buffer = self.buffers[default_buffer_name]
-        self.indent_level = 0
+        self.write("(function(%s) {" % self.LIB_NAME)
+        self.change_buffer(self.BODY_BUFFER)
 
-    def change_buffer(self, name):
-        self.buffer = self.buffers[name]
+        public_identifiers = self.mod_scope.module_all
+        not_all_exists = public_identifiers is None
+        if not_all_exists:
+            public_identifiers = []
 
-    def write(self, s):
-        self.buffer.append(s)
+    for k, v in self.export_map.items():
+        self.mod_scope.declare_variable(k)
+        self.write("%s = %s.%s;" % (k, self.LIB_NAME, v))
 
-    def indent(self, updown = True):
-        if updown:
-            self.indent_level += 1
-        else:
-            self.indent_level -= 1
+    for stmt in mod.body:
+        if isinstance(stmt, nodes.Assign) and len(stmt.targets) == 1 and\
+           isinstance(stmt.targets[0], nodes.Name) and\
+           stmt.targets[0].name in ("__all__", "__license__"):
+            continue
+        """
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Str):
+            continue # Module docstring
+        """
+
+        if not self.bare and not_all_exists:
+            for name in self.get_identifiers(stmt):
+                if name is not None and not name.startswith("_"):
+                    public_identifiers.append(name)
+
+        self.visit(stmt)
+        if not isinstance(stmt, nodes.Import) and not isinstance(stmt, nodes.From) and not isinstance(stmt, nodes.Pass):
+            self.write_semicolon(stmt)
+
+    if not self.bare:
+        self.public_identifiers.extend(public_identifiers)
+
+        get_name = lambda name: name if name not in self.translated_names else self.translated_names[name]
+        exported = (self.exe_first_differs(sorted(set(self.public_identifiers)), rest_text=",",
+            do_visit=lambda name: self.write("%s: %s" % (name, get_name(name)))))
+
+        self.write("%s.exports('%s',{%s});})(%s);" % (self.LIB_NAME, self.namespace, exported, self.LIB_NAME))
+
+    builtin_var = None
+    builtins = set(self.mod_scope.all_used_builtins())
+    if len(builtins) > 0:
+        builtin_var = self.curr_scope.generate_variable("__builtin__")
+        for builtin in builtins:
+            self.curr_scope.declare_variable(builtin)
+
+    self.change_buffer(self.HEADER_BUFFER)
+    self.write_variables()
+
+    if len(builtins) > 0:
+        self.write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
+        for builtin in builtins:
+            self.write("%s = %s.%s;" %(builtin, builtin_var, builtin))
+
+    for item in self.util_names.values():
+        name, value = item
+        self.write("%s = %s;" %(name, value))
+
+    self.flush_all_buffer()
+    self.curr_scope = None
 
 
+def translate_string(input,namespace="", target=None):
+    config = {}
+    output = StringIO()
+    config["bare"] = True
+    config["input_name"] = None
+    config["input_lines"] = [input]
+    config["output"] = StringIO()
+    config["namespace"] = namespace
+    config["use_throw_helper"] = True
+    config["warnings"] = False
+    config["use_throw_helper"] = False
 
+    try:
+        tree = nodes.parse(input)
+    except SyntaxError as e:
+        raise ParseError(e.msg, e.lineno, e.offset, True)
+
+    scope_gen = ScopeGenerator(config["namespace"], tree)
+
+    direct_handlers = {"module": py_visit_module}
+    moo = targets.get_translator(target)(scope_gen.root_scope, direct_handlers, config)
+    moo.walk(tree)
+    return config["output"].getvalue()
+
+
+def translate(config):
+    try:
+        tree = builder.ASTNGBuilder().string_build(config["input"], config["input_name"])
+        scope_gen = ScopeGenerator(config["namespace"], tree)
+        scope_gen.visit(tree)
+
+        direct_handlers = {"module": py_visit_module}
+        target = config.get("target", None)
+        moo = targets.get_translator(target)(scope_gen.root_scope, direct_handlers, config)
+        moo.walk(tree)
+        return scope_gen.root_scope.imported_modules()
+    except ParseError as e:
+        e.input_lines = config["input_lines"]
+        e.input_name = config["input_name"]
+        raise e
+    except SyntaxError as e:
+        raise ParseError(e.msg, e.lineno, e.offset, True, config["input_lines"], config["input_name"])
