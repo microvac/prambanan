@@ -21,18 +21,19 @@ class JavascriptModule(Module):
 
     def files(self):
         for path in self.paths:
-            yield ("js", path)
+            yield ("js", path, None)
 
 class PythonModule(Module):
-    def __init__(self, paths, dependencies=None):
+    def __init__(self, paths, namespace, dependencies=None):
         if isinstance(paths, str):
             paths = [paths]
         self.paths = paths
+        self.namespace = namespace
         super(PythonModule, self).__init__(dependencies)
 
     def files(self):
         for path in self.paths:
-            yield ("py", path)
+            yield ("py", path, self.namespace)
 
 class DirectoryModule(Module):
     def __init__(self, children, dependencies=None):
@@ -52,14 +53,20 @@ class DirectoryModule(Module):
             for child_item in child.files():
                 yield child_item
 
-def files_to_modules(files):
+def files_to_modules(files, base_directory):
     for file in  files:
         if os.path.isdir(file):
             yield DirectoryModule.load(file)
         else:
-            name, ext = os.path.splitext(os.path.basename(file))
+            base_name = os.path.basename(file)
+            name, ext = os.path.splitext(base_name)
             if ext == ".py":
-                yield PythonModule(file)
+                dir_name = os.path.dirname(os.path.abspath(file))
+                rel_dir = os.path.dirname(os.path.relpath(file, base_directory))
+                base_namespace = ".".join(os.path.split(rel_dir))[1:]
+                module_name = name if name != "__init__" else os.path.basename(dir_name)
+                namespace = module_name if base_namespace == "" else "%s.%s" % (base_namespace, module_name)
+                yield PythonModule(file, namespace)
             elif ext == ".js":
                 yield JavascriptModule(file)
             else:
@@ -124,7 +131,8 @@ def py_visit_module(self, mod):
     if len(builtins) > 0:
         builtin_var = self.curr_scope.generate_variable("__builtin__")
         for builtin in builtins:
-            self.curr_scope.declare_variable(builtin)
+            if self.namespace != "__builtin__" or builtin not in self.public_identifiers:
+                self.curr_scope.declare_variable(builtin)
 
     self.change_buffer(self.HEADER_BUFFER)
     self.write_variables()
@@ -132,7 +140,8 @@ def py_visit_module(self, mod):
     if len(builtins) > 0:
         self.write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
         for builtin in builtins:
-            self.write("%s = %s.%s;" %(builtin, builtin_var, builtin))
+            if self.namespace != "__builtin__" or builtin not in self.public_identifiers:
+                self.write("%s = %s.%s;" %(builtin, builtin_var, builtin))
 
     for item in self.util_names.values():
         name, value = item

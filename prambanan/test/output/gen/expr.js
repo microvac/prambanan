@@ -1,4 +1,4 @@
-(function (prambanan) {
+(function(prambanan) {
     var __builtin__, _op, _op1, _pow, a, b, d, e, f, get_b, i, print;
     __builtin__ = prambanan.import('__builtin__');
     print = __builtin__.print;
@@ -15,7 +15,7 @@
     print(16 << 2);
     print(2 >> 5);
     print(_pow(2, 3));
-    (function (_source) {
+    (function(_source) {
         e = _source[0];
         f = _source[1];
     })([5, 3]);
@@ -25,7 +25,7 @@
     a = 5;
     b = 7;
     i = [0];
-    get_b = function () {
+    get_b = function() {
         var a;
         a = i[0];
         i[0] = a + 1;
@@ -46,5 +46,5 @@
         print("daaa");
     }
     print(get_b());
-    prambanan.exports('', {get_b: get_b});
+    prambanan.exports('expr', {get_b: get_b});
 })(prambanan);

@@ -136,10 +136,15 @@ class JSDefaultTranslator(BaseTranslator):
         self.write(")")
 
     def visit_assname(self, n):
-        self.visit_name(n)
+        if n.name in utils.RESERVED_WORDS:
+            if not n.name in self.translated_names:
+                self.translated_names[n.name] = self.mod_scope.generate_variable("__keyword_"+n.name)
+            self.write(self.translated_names[n.name])
+        else:
+            self.write(n.name)
 
     def visit_delname(self, n):
-        pass
+        self.write("delete %s" % n.name)
 
     def visit_name(self, n):
         """
@@ -152,12 +157,8 @@ class JSDefaultTranslator(BaseTranslator):
         None -> null
 
         """
-        if n.name in utils.RESERVED_WORDS:
-            if not n.name in self.translated_names:
-                self.translated_names[n.name] = self.mod_scope.generate_variable("__keyword_"+n.name)
-            self.write(self.translated_names[n.name])
-        else:
-            self.write(n.name)
+        self.curr_scope.check_builtin_usage(n.name)
+        self.visit_assname(n)
 
     def visit_binop(self, o):
         """
@@ -166,9 +167,10 @@ class JSDefaultTranslator(BaseTranslator):
         and currently the only spot where tuples are allowed.
 
         """
-        if o.op == "%" and not (isinstance(o.left, nodes.Const) and isinstance(o.left.value, int)):
+        left_type = self.infer_type(o.left)
+        if o.op == "%" and left_type != "__builtin__.int":
             args = self.exe_first_differs(o.right.elts, rest_text=",") if isinstance(o.right, nodes.Tuple) else self.exe_node(o.right)
-            self.write("%s.__mod__(%s)" % (self.exe_node(o.left), args))
+            self.write("(%s).__mod__(%s)" % (self.exe_node(o.left), args))
         elif o.op == "**":
             pow_helper = self.get_util_var_name("_pow", "%s.helpers.pow" % self.LIB_NAME)
             self.write("%s(%s, %s)" % (pow_helper, self.exe_node(o.left), self.exe_node(o.right)))
@@ -548,13 +550,15 @@ class JSDefaultTranslator(BaseTranslator):
             if handler.type is not None:
                 if has_first:
                     self.write("else ")
-                if isinstance(handler.type, nodes.AssAttr) or isinstance(handler.type, nodes.Name):
+                if isinstance(handler.type, nodes.Getattr) or isinstance(handler.type, nodes.Name):
                     self.write("if (%s instanceof %s){" %(ex_var, self.exe_node(handler.type)))
                 elif isinstance(handler.type, nodes.Tuple):
                     self.write("if (%s){" % self.exe_first_differs(handler.type.elts,
                         rest_text="||",
                         do_visit=lambda elt: self.write("(%s instanceof %s)" % (ex_var, self.exe_node(elt)))
                     ))
+                else:
+                    self.raise_error("handler type not recognized %s" % handler.type.__class__.name, handler.type)
                 has_if = has_first = True
             else:
                 has_catch_all = True

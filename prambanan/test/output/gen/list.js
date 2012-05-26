@@ -1,4 +1,4 @@
-(function (prambanan) {
+(function(prambanan) {
     var __builtin__, _subscript, a, b, print;
     __builtin__ = prambanan.import('__builtin__');
     print = __builtin__.print;
@@ -29,5 +29,5 @@
     print(b);
     a.insert(3, 10);
     print(a);
-    prambanan.exports('', {});
+    prambanan.exports('list', {});
 })(prambanan);

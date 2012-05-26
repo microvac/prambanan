@@ -1,10 +1,10 @@
-(function (prambanan) {
+(function(prambanan) {
     var __builtin__, _iter, a, b, c, print, range;
     __builtin__ = prambanan.import('__builtin__');
     print = __builtin__.print;
     range = __builtin__.range;
     _iter = prambanan.helpers.iter;
-    a = (function () {
+    a = (function() {
         var _i, _len, _list, _results;
         _results = [];
         _list = _iter(range(1, 10));
@@ -15,7 +15,7 @@
         return _results;
     })();
     print(a);
-    a = (function () {
+    a = (function() {
         var _i, _len, _list, _results;
         _results = [];
         _list = _iter(range(1, 20));
@@ -26,7 +26,7 @@
         return _results;
     })();
     print(a);
-    a = (function () {
+    a = (function() {
         var _i, _len, _list, _results;
         _results = [];
         _list = _iter(range(1, 20));
@@ -37,7 +37,7 @@
         return _results;
     })();
     print(a);
-    a = (function () {
+    a = (function() {
         var _i, _len, _list, _results;
         _results = [];
         _list = _iter(range(1, 20));
@@ -47,7 +47,7 @@
         }
         return _results;
     })();
-    b = (function () {
+    b = (function() {
         var _i, _len, _list, _results;
         _results = [];
         _list = _iter(a);
@@ -58,7 +58,7 @@
         }
         return _results;
     })();
-    c = (function () {
+    c = (function() {
         var _i, _len, _list, _results;
         _results = [];
         _list = _iter(a);
@@ -73,5 +73,5 @@
     print(c);
     print(i);
     print(j);
-    prambanan.exports('', {});
+    prambanan.exports('listcomp', {});
 })(prambanan);

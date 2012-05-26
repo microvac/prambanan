@@ -1,3 +1,3 @@
-(function (prambanan) {
-    prambanan.exports('', {});
+(function(prambanan) {
+    prambanan.exports('exception', {});
 })(prambanan);

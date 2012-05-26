@@ -8,9 +8,9 @@ pylib_dir = resource_filename("prambanan", "pylib/")
 
 class MainPrambananProvider(PrambananProvider):
     modules = {
-        "math": PythonModule([join(pylib_dir, "math.py")]),
-        "time": PythonModule([join(pylib_dir, "time.py")]),
-        "datetime": PythonModule([join(pylib_dir, "datetime.py")], ["time"]),
+        "math": PythonModule(join(pylib_dir, "math.py"), "math"),
+        "time": PythonModule(join(pylib_dir, "time.py"), "time"),
+        "datetime": PythonModule(join(pylib_dir, "datetime.py"), "datetime", ["time"]),
     }
     def get_overridden_types(self):
         return {}

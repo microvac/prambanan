@@ -195,6 +195,16 @@ class BaseTranslator(BufferedWriter, ASTWalker):
             return "Function"
         return None
 
+    def infer_type(self, node):
+        try:
+            results = list(node.infer())
+            if  len(results) != 1:
+                return None
+            return results[0].pytype()
+
+        except (UnresolvableName, InferenceError):
+            return None
+
 
     def get_identifiers(self, stmt):
         names = []
@@ -289,7 +299,8 @@ class BaseTranslator(BufferedWriter, ASTWalker):
                     first = False
                 else:
                     self.write(", ")
-                self.write(variable)
+                name = self.translated_names.get(variable, variable)
+                self.write(name)
             self.write(";")
 
 
@@ -391,11 +402,16 @@ class BaseTranslator(BufferedWriter, ASTWalker):
             for i in xrange(len(args.defaults)):
                 get_arg = self.get_util_var_name("_get_arg", ("%s.helpers.get_arg" % self.LIB_NAME))
                 arg_name = self.exe_node(args.args[first+i])
-                self.write("%s = %s(%d, \"%s\", %s, %s);" % (arg_name, get_arg, first+i, arg_name, args_name, self.exe_node(args.defaults[i])))
+                index = first + i;
+                if strip_first:
+                    index -= 1
+                self.write("%s = %s(%d, \"%s\", %s, %s);" % (arg_name, get_arg, index, arg_name, args_name, self.exe_node(args.defaults[i])))
 
         if args.vararg is not None:
             get_varargs = self.get_util_var_name("_get_varargs", ("%s.helpers.get_varargs" % self.LIB_NAME))
             index = len(args.args)
+            if strip_first:
+                index -= 1
             self.write("%s = %s(%d, %s);" % (args.vararg, get_varargs, index, args_name))
 
         if args.kwarg is not None:

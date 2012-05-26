@@ -1,4 +1,4 @@
-(function (prambanan) {
+(function(prambanan) {
     var __builtin__, _get_arg, _get_kwargs, _get_varargs, _init_args, _make_kwargs, iter, print, sorted, test1, test2, test3, test4, test5, test6, test7, test8, test9;
     __builtin__ = prambanan.import('__builtin__');
     print = __builtin__.print;
@@ -9,11 +9,11 @@
     _get_arg = prambanan.helpers.get_arg;
     _make_kwargs = prambanan.helpers.make_kwargs;
     _get_varargs = prambanan.helpers.get_varargs;
-    test1 = function (a, b) {
+    test1 = function(a, b) {
         print("%d, %d".__mod__(a, b));
     };
     test1(2, 4);
-    test2 = function (a, b) {
+    test2 = function(a, b) {
         var _args;
         _args = _init_args(arguments);
         b = _get_arg(1, "b", _args, 20);
@@ -21,7 +21,7 @@
     };
     test2(2, 4);
     test2(2);
-    test3 = function (args) {
+    test3 = function(args) {
         var _args, _i, _len, _list, a;
         _args = _init_args(arguments);
         args = _get_varargs(0, _args);
@@ -34,7 +34,7 @@
     test3();
     test3(1);
     test3(1, 2, 3, 4, 5, 6);
-    test4 = function (i, args) {
+    test4 = function(i, args) {
         var _args, _i, _len, _list, a;
         _args = _init_args(arguments);
         args = _get_varargs(1, _args);
@@ -46,7 +46,7 @@
     };
     test4(1);
     test4(1, 2, 3, 4, 5, 6);
-    test5 = function (i, b, args) {
+    test5 = function(i, b, args) {
         var _args, _i, _len, _list, a;
         _args = _init_args(arguments);
         b = _get_arg(1, "b", _args, 77);
@@ -61,7 +61,7 @@
     test5(5);
     test5(8, 9, 10);
     test5(8, _make_kwargs({b: 20}));
-    test6 = function (b, kwargs) {
+    test6 = function(b, kwargs) {
         var _args, _i, _len, _list, a;
         _args = _init_args(arguments);
         b = _get_arg(0, "b", _args, 99);
@@ -75,7 +75,7 @@
     };
     test6(_make_kwargs({b: 31}));
     test6(_make_kwargs({b: 31,c: 4,e: 5}));
-    test7 = function (args, kwargs) {
+    test7 = function(args, kwargs) {
         var _args, _i, _i1, _len, _len1, _list, _list1, a;
         _args = _init_args(arguments);
         args = _get_varargs(0, _args);
@@ -94,7 +94,7 @@
         }
     };
     test7(1, 2, 3, _make_kwargs({a: 4,b: 5,c: 6}));
-    test8 = function (wew, args, kwargs) {
+    test8 = function(wew, args, kwargs) {
         var _args, _i, _i1, _len, _len1, _list, _list1, a;
         _args = _init_args(arguments);
         args = _get_varargs(1, _args);
@@ -114,7 +114,7 @@
         }
     };
     test8(1, 2, 3, _make_kwargs({a: 4,b: 5,c: 6}));
-    test9 = function (kwargs) {
+    test9 = function(kwargs) {
         var _args;
         _args = _init_args(arguments);
         kwargs = _get_kwargs(_args);
@@ -123,5 +123,5 @@
         print(kwargs.pop("b", 40));
     };
     test9(_make_kwargs({a: 4,b: 5,c: 6}));
-    prambanan.exports('', {test1: test1,test2: test2,test3: test3,test4: test4,test5: test5,test6: test6,test7: test7,test8: test8,test9: test9});
+    prambanan.exports('args', {test1: test1,test2: test2,test3: test3,test4: test4,test5: test5,test6: test6,test7: test7,test8: test8,test9: test9});
 })(prambanan);

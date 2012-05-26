@@ -2,14 +2,14 @@
     var root = this;
     var prambanan = root.prambanan = {};
     var helpers = prambanan.helpers = {};
-    var builtins = {};
+    function Module(){};
+    var builtins = new Module();
     var slice = Array.prototype.slice;
     /*
      Module import and exports
      */
     _.extend(prambanan, (function(){
         var modules = {};
-        function Module(){};
         var dotNotateModule = function(s){
             var splitted = s.split(".");
             var current = modules;
@@ -653,4 +653,4 @@
         prambanan.patch(name);
     })();
 
-}).call(this)
+}).call(this);

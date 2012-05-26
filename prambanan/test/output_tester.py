@@ -4,7 +4,8 @@ import subprocess
 import pkg_resources
 
 from StringIO import StringIO
-from prambanan.compiler import translate
+from prambanan.cmd import generate_runtime, create_args, translate_parser,  generate, generate_parser
+from prambanan.compiler import translate, files_to_modules
 from prambanan import jsbeautifier
 
 js_opt = jsbeautifier.BeautifierOptions()
@@ -13,15 +14,16 @@ js_opt.jslint_happy = True
 class OutputTester(object):
 
     dir = pkg_resources.resource_filename("prambanan", "test/")
-    js_dir = pkg_resources.resource_filename("prambanan", "js/")
 
     rhino_path = os.path.join(dir, "rhino.jar")
     run_js = os.path.join(dir, "run_rhino.js")
 
-    def __init__(self, src_dir, included_js=[]):
+    def __init__(self, src_dir):
         self.src_dir = src_dir
-        self.included_js = included_js
         self.gen_dir = os.path.join(src_dir, "gen")
+        self.runtime_file = os.path.join(self.gen_dir, "__runtime__.js")
+        with open(self.runtime_file, "w") as f:
+            generate_runtime(create_args(translate_parser, output=f))
 
     def execute(self, args):
         proc = subprocess.Popen(args,
@@ -33,11 +35,7 @@ class OutputTester(object):
 
     def create_rhino_args(self, name):
         args = ["java", "-jar", self.rhino_path, self.run_js]
-        args.append(os.path.join(self.js_dir, "lib", "underscore.js"))
-        args.append(os.path.join(self.js_dir, "lib", "backbone.js"))
-        args.append(os.path.join(self.js_dir, "prambanan.js"))
-        for included_js in self.included_js:
-            args.append(included_js)
+        args.append(self.runtime_file)
         args.append(os.path.join(self.gen_dir, name+".js"))
         return args
 
@@ -47,26 +45,10 @@ class OutputTester(object):
         return args
 
     def py_to_js(self, name):
-        config = self.create_prambanan_config(name+".py")
-        translate(config)
-        result = jsbeautifier.beautify(config["output"].getvalue(), js_opt)
         result_name = name+".js"
         with open(os.path.join(self.gen_dir, result_name), "w") as f:
-            f.write(result)
-
-    def create_prambanan_config(self, input_name):
-        lines = open(os.path.join(self.src_dir, input_name), 'r').readlines()
-        config = {}
-        output = StringIO()
-        config["input"] = StringIO("".join(lines)).read()
-        config["bare"] = False
-        config["input_name"] = input_name
-        config["input_lines"] = lines
-        config["output"] = StringIO()
-        config["namespace"] = ""
-        config["use_throw_helper"] = True
-        config["warnings"] = []
-        return config
+            translate_args = create_args(generate_parser, import_warning=True, generate_imports=True, output=f)
+            generate(translate_args, files_to_modules([os.path.join(self.src_dir, name+".py")], self.src_dir))
 
     def run(self):
         for dirname, dirnames, filenames in os.walk(self.src_dir):
@@ -81,6 +63,21 @@ class OutputTester(object):
                     yield (js, py)
 
 def make_test_method(tester, name, print_output):
+    def result(self):
+        print "------------------"
+        print "executing "+name
+        tester.py_to_js(name)
+        js =  tester.execute(tester.create_rhino_args(name))
+        py =  tester.execute(tester.create_python_args(name))
+        if print_output:
+            print "javascript"
+            print js
+            print "python"
+            print py
+        self.assertEquals(js, py)
+    return result
+
+def make_setup_method(tester, name, print_output):
     def result(self):
         print "------------------"
         print "executing "+name

@@ -1,4 +1,4 @@
-(function (prambanan) {
+(function(prambanan) {
     var __builtin__, _i, _i1, _i2, _len, _len1, _len2, _list, _list1, _list2, i, j, map, print, range;
     __builtin__ = prambanan.import('__builtin__');
     print = __builtin__.print;
@@ -9,7 +9,7 @@
         i = _list[_i];
         print(i);
     }
-    _list1 = map(function (i) {
+    _list1 = map(function(i) {
         return [i, i * 2];
     }, range(1, 10));
     for (_i1 = 0, _len1 = _list1.length; _i1 < _len1; _i1++) {
@@ -31,5 +31,5 @@
         print("i ne: %d".__mod__(i));
         i = i + 1;
     }
-    prambanan.exports('', {});
+    prambanan.exports('loop', {});
 })(prambanan);

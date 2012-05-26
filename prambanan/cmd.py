@@ -15,19 +15,13 @@ from prambanan.compiler import (
 from prambanan.compiler.provider import all_providers
 
 
-def construct_parser():
+def create_translate_parser():
     parser = argparse.ArgumentParser(
         description="Translate python to javascript.")
-
-    parser.add_argument('files', metavar='f', type=str, nargs='*',
-        help='input filenames')
 
     parser.add_argument("-o", "--output",
         type=argparse.FileType('w'), default=sys.stdout,
         help="output file, or std output if empty")
-    parser.add_argument("-n", "--namespace", dest="base_namespace",
-        default = "", type=str,
-        help="base export namespace, something that appends to filename")
 
     parser.add_argument("-t", "--target", dest="target",
         default = "", type=str,
@@ -48,35 +42,54 @@ def construct_parser():
     parser.add_argument("--no-beautify", action="store_false", dest="beautify",
         help="don't beautify result")
 
+    parser.add_argument("--type-warning", action="store_true",
+        help="warn when not finding type")
+    return parser
+
+def create_generate_parser():
+    parser = create_translate_parser()
+
     parser.add_argument("--no-generate-result", action="store_false", dest="generate_result",
         help="don't generate result")
     parser.add_argument("--generate-imports", action="store_true",
         help="also generate imported module")
     parser.add_argument("--generate-runtime", action="store_true",
         help="also generate runtime library")
-
-    parser.add_argument("--type-warning", action="store_true",
-        help="warn when not finding type")
     parser.add_argument("--import-warning", action="store_true",
         help="warn when cannot resolve import")
 
+
     return parser
 
-parser = construct_parser()
+def create_main_parser():
+    parser = create_generate_parser()
+    parser.add_argument('files', metavar='f', type=str, nargs='*',
+        help='input filenames')
+    return parser
 
-def parse_args(argv):
+translate_parser = create_translate_parser()
+generate_parser = create_generate_parser()
+main_parser = create_main_parser()
+
+def parse_args(argv, parser):
     args = parser.parse_args(argv)
     args.namespace = None
     return args
 
-def copy_args(source):
-    args = parse_args("")
-    args.__dict__.update(source.__dict__)
+def merge_args(args, d):
+    for name in args.__dict__:
+        if name in d:
+            args.__dict__[name] = d[name]
+
+def copy_args(source, parser, **kwargs):
+    args = parse_args("", parser)
+    merge_args(args, source.__dict__)
+    merge_args(args, dict(kwargs))
     return args
 
-def create_args(**kwargs):
-    args = parse_args("")
-    args.__dict__.update(dict(kwargs))
+def create_args(parser,**kwargs):
+    args = parse_args("", parser)
+    merge_args(args, dict(kwargs))
     return args
 
 def walk_import(import_name, modules):
@@ -95,30 +108,23 @@ def walk_imports(import_names, modules):
                 results[name] = value
     return results
 
-def translate_py_file(args, filename, output, overridden_types):
-    base_namespace = args.base_namespace
-
+def translate_py_file(translate_args, filename, namespace, overridden_types):
+    #warnings
     warnings = {}
-    if args.type_warning:
+    if translate_args.type_warning:
         warnings["type"] = True
-    if args.import_warning:
-        warnings["import"] = True
 
-    base_name = os.path.basename(filename)
-    dir_name = os.path.dirname(os.path.abspath(filename))
-    name, ext = os.path.splitext(base_name)
-    module_name = name if name != "__init__" else os.path.basename(dir_name)
+    #input
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+    input = StringIO("".join(lines)).read()
 
-    if args.namespace is None:
-        namespace = module_name if base_namespace == "" else "%s.%s" % (base_namespace, module_name)
-    else:
-        namespace = args.namespace
-
+    #i18n translator
     translator = None
-    if args.locale_language is not None:
-        lang = args.locale_language
-        locale_domain = args.locale_domain
-        locale_dir = args.locale_dir
+    if translate_args.locale_language is not None:
+        lang = translate_args.locale_language
+        locale_domain = translate_args.locale_domain
+        locale_dir = translate_args.locale_dir
         if locale_domain is None:
             locale_domain = namespace
         if locale_dir is None:
@@ -135,9 +141,11 @@ def translate_py_file(args, filename, output, overridden_types):
     if translator is None:
         translator = gettext.NullTranslations().gettext
 
-    with open(filename, 'r') as f:
-        lines = f.readlines()
-    input = StringIO("".join(lines)).read()
+
+    #native file
+    base_name = os.path.basename(filename)
+    dir_name = os.path.dirname(os.path.abspath(filename))
+    name, ext = os.path.splitext(base_name)
 
     native = None
     if base_name == "__init__.py":
@@ -147,69 +155,84 @@ def translate_py_file(args, filename, output, overridden_types):
     if os.path.isfile(native_file):
         with open(native_file, "r") as f:
             native = f.readlines()
+
     config = {
+        "bare": translate_args.bare,
+        "output": translate_args.output,
+        "target": translate_args.target,
         "namespace": namespace,
         "input_name": base_name,
         "input_lines": lines,
         "input": input,
         "warnings": warnings,
         "indent": "\t",
-        "bare": args.bare,
-        "output": output,
         "native": native,
         "overridden_types": overridden_types,
         "translator": translator,
-        "target": args.target,
         }
 
     return translate(config)
 
-def translate_modules(modules, args, output, overridden_types):
+def generate_modules(translate_args, modules):
+    overridden_types = dict([ (n,f) for p in all_providers() for n,f in p.get_overridden_types().items()])
+
     imports = []
     for module in  modules:
-        for type, file in module.files():
+        for type, file, namespace in module.files():
             if type == "js":
                 with open(file, "r") as f:
-                    output.write(f.read())
+                    translate_args.output.write(f.read())
             elif type == "py":
-                tmp_out = StringIO() if args.beautify else output
-                file_imports = translate_py_file(args, file, tmp_out, overridden_types)
+                tmp_args = copy_args(translate_args, translate_parser, output=StringIO() if translate_args.beautify else translate_args.output)
+                file_imports = translate_py_file(tmp_args, file, namespace, overridden_types)
                 for imp in file_imports:
                     imports.append(imp)
-                if args.beautify:
-                    output.write(beautify(tmp_out.getvalue()))
+                if translate_args.beautify:
+                    translate_args.output.write(beautify(tmp_args.output.getvalue()))
             else:
                 raise ValueError("type %s is not supported for file %s" % (type % file))
     return imports
 
 
-def generate_runtime(source_args, out):
+def generate_runtime(translate_args):
     base_js_lib = lambda name: pkg_resources.resource_filename("prambanan", "js/lib/"+name)
     base_js = lambda name: pkg_resources.resource_filename("prambanan", "js/"+name)
     base_py = lambda name: pkg_resources.resource_filename("prambanan", name)
 
     base_modules = []
     base_modules.append(JavascriptModule([
-        base_js_lib("zepto.min.js"),
         base_js_lib("underscore.js"),
         base_js_lib("backbone.js"),
         base_js("prambanan.js"),
         ]))
-    base_modules.append(PythonModule(base_py("__init__.py")))
-    translate_modules(base_modules, source_args, out, {})
-
-    ex_builtin_modules = []
-    ex_builtin_modules.append(PythonModule(base_py("pylib/builtins.py")))
-    args = copy_args(source_args)
-    args.namespace = "__builtin__"
-    translate_modules(ex_builtin_modules, args, out, {})
+    base_modules.append(PythonModule(base_py("__init__.py"), "prambanan"))
+    base_modules.append(PythonModule(base_py("pylib/builtins.py"), "__builtin__"))
+    generate_modules(translate_args, base_modules)
 
 
-def generate_imports(args, out, import_names, available_modules, overridden_types):
+def generate_imports(translate_args, import_names):
+    providers = all_providers()
+    available_modules = dict([ (n,m) for p in providers for n,m in p.get_modules().items()])
+
     used_modules = walk_imports(import_names, available_modules)
+    for name in import_names:
+        if name not in used_modules and translate_args.import_warning:
+            sys.stderr.write("WARN: cannot find module %s for import  \n" % name)
     for name, module in used_modules.items():
-        sys.stderr.write("generating %s" % name)
-        translate_modules([module], args, out, overridden_types)
+        sys.stderr.write("INFO: generating import %s\n" % name)
+        generate_modules(translate_args, [module])
+
+def generate(generate_args, modules):
+    translate_args = copy_args(generate_args, translate_parser)
+    gen_module_args = copy_args(translate_args, translate_parser,
+        output = StringIO() if generate_args.generate_result else open(os.devnull, "w"))
+    imports = generate_modules(gen_module_args, modules)
+    if generate_args.generate_runtime:
+        generate_runtime(translate_args)
+    if generate_args.generate_imports:
+        generate_imports(translate_args, imports)
+    if generate_args.generate_result:
+        generate_args.output.write(gen_module_args.output.getvalue())
 
 def show_parse_error(e):
     if e.lineno is not None:
@@ -230,19 +253,11 @@ def show_parse_error(e):
     sys.stderr.write("\n")
 
 def main(argv=sys.argv[1:]):
-    args = parse_args(argv)
-    providers = all_providers()
-    modules = dict([ (n,m) for p in providers for n,m in p.get_modules().items()])
-    overridden_types = dict([ (n,f) for p in providers for n,f in p.get_overridden_types().items()])
+    main_args = parse_args(argv, main_parser)
+    modules = list(files_to_modules([os.path.abspath(f) for f in main_args.files], os.path.abspath("")))
+    generate_args = copy_args(main_args, generate_parser)
     try:
-        translate_out = StringIO() if args.generate_result else open(os.devnull, "w")
-        imports = translate_modules(files_to_modules(args.files), args, translate_out, overridden_types)
-        if args.generate_runtime:
-            generate_runtime(args, args.output)
-        if args.generate_imports:
-            generate_imports(args, args.output, imports, modules, overridden_types)
-        if args.generate_result:
-            args.output.write(translate_out.getvalue())
+        generate(generate_args, modules)
     except ParseError as e:
         show_parse_error(e)
         return 1
