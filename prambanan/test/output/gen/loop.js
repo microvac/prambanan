@@ -15,7 +15,7 @@
     for (_i1 = 0, _len1 = _list1.length; _i1 < _len1; _i1++) {
         i = _list1[_i1][0];
         j = _list1[_i1][1];
-        print("%d - %d".__mod__(i, j));
+        print(("%d - %d").__mod__(i, j));
     }
     _list2 = range(1, 10);
     for (_i2 = 0, _len2 = _list2.length; _i2 < _len2; _i2++) {
@@ -28,7 +28,7 @@
     }
     i = 0;
     while (i < 20) {
-        print("i ne: %d".__mod__(i));
+        print(("i ne: %d").__mod__(i));
         i = i + 1;
     }
     prambanan.exports('loop', {});

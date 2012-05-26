@@ -9,8 +9,8 @@
     print(a * 5);
     print(a - b);
     print("eaaaa" + "aduuuh");
-    print("tada %s".__mod__("hmmm"));
-    print("tada %s - %d".__mod__("hmmm", 4));
+    print(("tada %s").__mod__("hmmm"));
+    print(("tada %s - %d").__mod__("hmmm", 4));
     print(6 / 3);
     print(16 << 2);
     print(2 >> 5);

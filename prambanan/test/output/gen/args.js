@@ -10,14 +10,14 @@
     _make_kwargs = prambanan.helpers.make_kwargs;
     _get_varargs = prambanan.helpers.get_varargs;
     test1 = function(a, b) {
-        print("%d, %d".__mod__(a, b));
+        print(("%d, %d").__mod__(a, b));
     };
     test1(2, 4);
     test2 = function(a, b) {
         var _args;
         _args = _init_args(arguments);
         b = _get_arg(1, "b", _args, 20);
-        print("%d, %d".__mod__(a, b));
+        print(("%d, %d").__mod__(a, b));
     };
     test2(2, 4);
     test2(2);

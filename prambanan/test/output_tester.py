@@ -92,7 +92,7 @@ def make_setup_method(tester, name, print_output):
         self.assertEquals(js, py)
     return result
 
-def directory_tester(src_dir, print_output=False):
+def directory_tester(src_dir, print_output=False, files=None):
     tester = OutputTester(src_dir)
     def dec(cls):
         if src_dir is not None:
@@ -100,7 +100,8 @@ def directory_tester(src_dir, print_output=False):
                 for filename in filenames:
                     name, ext = os.path.splitext(filename)
                     if ext == ".py":
-                        setattr(cls, "test_file_"+name,  make_test_method(tester, name, print_output))
+                        if files is None or name in files:
+                            setattr(cls, "test_file_"+name,  make_test_method(tester, name, print_output))
         return cls
     return dec
 

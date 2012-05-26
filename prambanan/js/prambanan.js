@@ -246,7 +246,9 @@
      */
     _.extend(builtins, {
         bool: function(i) {return !!i;},
-        int: Number,
+        int: function(i){
+            return Math.round(Number(i));
+        },
         float: Number,
         str: function(o){
             if (!_.isUndefined(o) && o.__str__){

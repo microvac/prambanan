@@ -9,7 +9,7 @@ MAXYEAR = 1000000
 __Jan_01_0001 = JS("""(new Date((new Date('Jan 1 1971')).getTime() - 62167132800000)).getTime()""")
 
 
-class date:
+class date(object):
     def __init__(self, year, month, day, d=None):
         if d is None:
             d = JS("""new Date(@{{year}}, @{{month}} - 1, @{{day}}, 0, 0, 0, 0)""")
@@ -139,7 +139,7 @@ class date:
             raise TypeError("expected date or datetime object")
 
 
-class time:
+class time(object):
     def __init__(self, hour, minute=0, second=0, microsecond=0, tzinfo=None, d=None):
         if tzinfo != None:
             raise NotImplementedError("tzinfo")
@@ -187,16 +187,18 @@ class time:
         return self.isoformat()
 
 
-class datetime(date):
+JS("var __date = date; __time = time")
+
+class datetime(date, time):
     def __init__(self, year, month, day, hour=0, minute=0, second=0, microsecond=0, tzinfo=None, d=None):
         if d is None:
             d = JS("""new Date(@{{year}}, @{{month}} - 1, @{{day}}, @{{hour}}, @{{minute}}, @{{second}}, 0.5 + @{{microsecond}} / 1000.0)""")
-        super(datetime, self).__init__(0, 0, 0, d)
-        self.hour = d.getHours()
-        self.minute = d.getMinutes()
-        self.second = d.getSeconds()
-        self.microsecond = d.getMilliseconds() * 1000.0
-        self.tzinfo = None
+        JS("__date.prototype.__init__.call(this, 0, 0, 0, @{{d}})")
+        JS("__time.prototype.__init__.call(this, 0, 0, 0, 0, null, @{{d}})")
+
+    @staticmethod
+    def today():
+        return datetime(0, 0, 0, 0, 0, 0, 0, None, JS("""new Date()"""))
 
     @staticmethod
     def combine(date, time):
