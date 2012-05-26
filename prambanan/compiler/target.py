@@ -565,11 +565,21 @@ class JSDefaultTranslator(BaseTranslator):
 
     def visit_listcomp(self, lc):
         """
-        [expr for item if expr in lists] ->
-            (function(){
-                var _i, _len, _results;
-                _results = []
-            })();
+        @translate-spec
+           [i for i in l]
+        ->
+           (function(){
+               var _i, _len, _list, _results;_results = [];
+               _list = prambanan.helpers.iter(l);
+                   for (_i = 0, _len = _list.length; _i < _len; _i++) {
+                       i = _list[_i];
+                       _results.push(i);
+                   }
+                   return _results;
+           })();
+
+        @translate-error
+            [i for i in l for j in l2]
         """
         if len(lc.generators) > 1:
             self.raise_error("Could only support one generator now",  lc.generators[1].target)
@@ -589,7 +599,7 @@ class JSDefaultTranslator(BaseTranslator):
 
         self.push_context(lc.name)
         self.change_buffer(self.HEADER_BUFFER)
-        self.write(" (function(){ ")
+        self.write("(function(){ ")
         self.change_buffer(self.BODY_BUFFER)
 
         i_var = self.curr_scope.generate_variable("_i")
@@ -601,23 +611,30 @@ class JSDefaultTranslator(BaseTranslator):
 
         self.write("%s = []; " % results_var)
         self.write("%s = %s(%s); " % (list_var, iter_name, self.exe_node(f.iter)))
-        self.write("for (%s = 0, %s = %s.length; %s < %s; %s++) {" % (i_var, len_var, list_var, i_var, len_var, i_var))
+        self.write("for (%s = 0, %s = %s.length; %s < %s; %s++) { " % (i_var, len_var, list_var, i_var, len_var, i_var))
         if not is_tuple:
             self.write(    "%s = %s[%s];" % (iter_var, list_var, i_var))
         else:
             for i in range(0, len(iter_var)):
                 self.write("%s = %s[%s][%d];" % (iter_var[i], list_var, i_var, i))
         for _if in f.ifs:
-            self.write("    if (%s)" % self.exe_node(_if))
-        self.write(            "%s.push(%s);" % (results_var, self.exe_node(lc.elt)))
-        self.write("}")
-        self.write("return %s;" % results_var)
-        self.write("})()")
+            self.write(    " if (%s)" % self.exe_node(_if))
+        self.write(            " %s.push(%s);" % (results_var, self.exe_node(lc.elt)))
+        self.write(" }")
+        self.write(" return %s;" % results_var)
+        self.write(" })()")
 
         self.pop_context()
 
 
     def visit_raise(self, r):
+        """
+        @translate-spec
+            raise Exception()
+        ->
+            var Exception, __builtin__;__builtin__ = prambanan.import('__builtin__');Exception = __builtin__.Exception;prambanan.helpers.throw(new Exception(), 'source.py', 1);
+
+        """
         exc = self.exe_node(r.exc)
 
         if self.use_throw_helper:
@@ -630,6 +647,10 @@ class JSDefaultTranslator(BaseTranslator):
     def visit_print(self, p):
         """
         Translate print "aa" to print("aa")
+        @translate-spec
+            print "str"
+        ->
+            var __builtin__, print;__builtin__ = prambanan.import('__builtin__');print = __builtin__.print;print("str");
 
         """
         self.write("print(%s)" % self.exe_first_differs(p.values, rest_text=","))
@@ -638,6 +659,14 @@ class JSDefaultTranslator(BaseTranslator):
         self.walk(v.value)
 
     def visit_const(self, t):
+        """
+        @translate-spec
+            "str".c()
+        ->
+            "str".c();
+
+
+        """
         if isinstance(t.value, str):
             self.write(simplejson.dumps(self.translator(t.value)))
         elif isinstance(t.value, bool):
@@ -659,11 +688,15 @@ class JSDefaultTranslator(BaseTranslator):
     def visit_lambda(self, l):
         """
         Translates a lambda function.
+        @translate-spec
+            lambda x : x * 2
+        ->
+            function(x) { return x * 2; };
 
         """
         with self.Executor() as args:
             self.write_def_args(l.args)
-        self.write("function(%s) {return %s; }" % (args.result, self.exe_node(l.body)))
+        self.write("function(%s) { return %s; }" % (args.result, self.exe_node(l.body)))
 
     def visit_yield(self, y):
         """
@@ -741,19 +774,44 @@ class JSDefaultTranslator(BaseTranslator):
         """
         Translate an if-block.
 
+        @translate-spec
+            if c:
+                a()
+        ->
+            if (c) { a(); }
+
+        @translate-spec
+            if c:
+                a()
+            else:
+                b()
+        ->
+            if (c) { a(); } else { b(); }
         """
         test = self.exe_node(i.test)
         if isinstance(i.test, nodes.Compare):
             self.write("".join(i.test.inits))
-        self.write("if ( %s ) { %s }" % (test, self.exe_body(i.body)))
+        self.write("if (%s) { %s }" % (test, self.exe_body(i.body)))
         if len(i.orelse) > 0:
-            self.write("else {%s}" % self.exe_body(i.orelse))
+            self.write(" else { %s }" % self.exe_body(i.orelse))
 
 
     def visit_ifexp(self, i):
         """
         Translate an if-expression.
 
+        @translate-spec
+            2 if c < 3 else 4
+        ->
+            c < 3 ? 2 : 4;
+
+        @translate-spec
+            2 if 1 < c < 3 else 4
+        ->
+            (1 < c)&&(c < 3) ? 2 : 4;
+
+        @translate-error
+            2 if 1 < call(c) < 3 else 4
         """
         test = self.exe_node(i.test)
         if isinstance(i.test, nodes.Compare):
@@ -765,6 +823,17 @@ class JSDefaultTranslator(BaseTranslator):
         """
         Translate a while loop.
 
+        @translate-spec
+            while c:
+                c
+        ->
+            while (c) { c; }
+
+        @translate-error
+            while c:
+                c
+            else:
+                c
         """
         if len(w.orelse) > 0:
             self.raise_error("`else` branches of the `while` statement are not supported", w.orelse[0])
@@ -773,10 +842,20 @@ class JSDefaultTranslator(BaseTranslator):
         if isinstance(w.test, nodes.Compare):
             self.write("".join(w.test.inits))
 
-        self.write("while (%s){ %s }" % (test, self.exe_body(w.body)))
+        self.write("while (%s) { %s }" % (test, self.exe_body(w.body)))
 
     def visit_tryfinally(self, tf):
-        self.write("try{ %s } finally { %s }" % (self.exe_body(tf.body, True, True),  self.exe_body(tf.finalbody, True, True)))
+        """
+        @translate-spec
+            try:
+                c()
+            finally:
+                a()
+        ->
+            try { c(); } finally { a(); }
+
+        """
+        self.write("try { %s } finally { %s }" % (self.exe_body(tf.body, True, True),  self.exe_body(tf.finalbody, True, True)))
 
     def visit_assert(self, a):
         pass

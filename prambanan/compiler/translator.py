@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from logilab.astng import nodes
-from logilab.astng.exceptions import UnresolvableName
+from logilab.astng.exceptions import UnresolvableName, InferenceError
 from logilab.astng.utils import ASTWalker
 
 import gettext
@@ -183,7 +183,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
                     is_class = True
                 elif isinstance(inferred, nodes.Function):
                     is_func = True
-        except UnresolvableName:
+        except (UnresolvableName, InferenceError):
             return None
 
         if is_class and is_func:
