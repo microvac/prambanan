@@ -713,7 +713,7 @@
                 return this.slice(this.length-s.length) == s;
             },
             join: function(col){
-                result = "";
+                var result = "";
                 for (var i = 0; i < col.length; i++){
                     result+=col[i];
                     if(i != col.length - 1)
