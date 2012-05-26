@@ -1,2 +1,2 @@
-var is_server= false;
+var is_js= true;
 var items= _.items;

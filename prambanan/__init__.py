@@ -7,7 +7,5 @@ def JS(fn):
 def JSNoOp(target):
     return target
 
-def select(fn, server, client):
-    return server if is_server else client
-
-
+def select(fn, py, js):
+    return js if is_js else py
