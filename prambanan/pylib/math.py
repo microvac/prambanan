@@ -1,4 +1,4 @@
-from __pyjamas__ import JS
+from prambanan import JS
 
 def ceil(x): return float(JS("Math.ceil(@{{x}}.valueOf())"))
 def fabs(x): return float(JS("Math.abs(@{{x}}.valueOf())"))

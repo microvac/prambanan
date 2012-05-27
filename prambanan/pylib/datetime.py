@@ -1,5 +1,4 @@
-from __pyjamas__ import JS
-
+from prambanan import JS
 from time import __c__days, __c__months, strftime, localtime, gmtime, _strptime
 
 MINYEAR = 1

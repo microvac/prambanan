@@ -44,6 +44,9 @@ def create_translate_parser():
 
     parser.add_argument("--type-warning", action="store_true",
         help="warn when not finding type")
+    parser.add_argument("--import-warning", action="store_true",
+        help="warn when cannot resolve import")
+
     return parser
 
 def create_generate_parser():
@@ -55,9 +58,6 @@ def create_generate_parser():
         help="also generate imported module")
     parser.add_argument("--generate-runtime", action="store_true",
         help="also generate runtime library")
-    parser.add_argument("--import-warning", action="store_true",
-        help="warn when cannot resolve import")
-
 
     return parser
 
@@ -219,20 +219,18 @@ def generate_imports(translate_args, import_names):
         if name not in used_modules and translate_args.import_warning:
             sys.stderr.write("WARN: cannot find module %s for import  \n" % name)
     for name, module in used_modules.items():
-        sys.stderr.write("INFO: generating import %s\n" % name)
         generate_modules(translate_args, [module])
 
 def generate(generate_args, modules):
+    modules = list(modules)
     translate_args = copy_args(generate_args, translate_parser)
-    gen_module_args = copy_args(translate_args, translate_parser,
-        output = StringIO() if generate_args.generate_result else open(os.devnull, "w"))
-    imports = generate_modules(gen_module_args, modules)
+    imports = [d for m in modules for d in m.dependencies]
     if generate_args.generate_runtime:
         generate_runtime(translate_args)
     if generate_args.generate_imports:
         generate_imports(translate_args, imports)
     if generate_args.generate_result:
-        generate_args.output.write(gen_module_args.output.getvalue())
+        generate_modules(translate_args, modules)
 
 def show_parse_error(e):
     if e.lineno is not None:

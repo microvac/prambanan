@@ -1,6 +1,5 @@
 # Check http://docs.python.org/library/time.html
-
-from __pyjamas__ import JS
+from prambanan import JS
 import math
 
 timezone = JS("60 * (new Date(new Date().getFullYear(), 0, 1)).getTimezoneOffset()")

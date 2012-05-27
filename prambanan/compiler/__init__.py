@@ -2,9 +2,10 @@ from StringIO import StringIO
 from exceptions import SyntaxError
 from logilab.astng import nodes, builder
 import os
-from prambanan.compiler.scopegenerator import ScopeGenerator
-from prambanan.compiler.target import targets
-from prambanan.compiler.utils import ParseError
+from .scopegenerator import ScopeGenerator
+from .target import targets
+from .utils import ParseError
+from .import_finder import ImportFinder
 
 class Module(object):
     def __init__(self, dependencies):
@@ -24,16 +25,13 @@ class JavascriptModule(Module):
             yield ("js", path, None)
 
 class PythonModule(Module):
-    def __init__(self, paths, namespace, dependencies=None):
-        if isinstance(paths, str):
-            paths = [paths]
-        self.paths = paths
+    def __init__(self, path, namespace):
+        self.path = path
         self.namespace = namespace
-        super(PythonModule, self).__init__(dependencies)
+        super(PythonModule, self).__init__(ImportFinder.find_imports(path, namespace))
 
     def files(self):
-        for path in self.paths:
-            yield ("py", path, self.namespace)
+        yield ("py", self.path, self.namespace)
 
 class DirectoryModule(Module):
     def __init__(self, children, dependencies=None):
