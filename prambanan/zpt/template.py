@@ -28,17 +28,17 @@ class ElementStack(object):
         self.current.attrib[name] = value
     a = attr
 
-class PageTemplate(object):
-    def __init__(self, render):
-        self.__render = render
+def PageTemplate(__render):
 
-    def render(self, el, encoding=None, translate=None, target_languange=None, **vars):
+    def render(el, encoding=None, translate=None, target_languange=None, **vars):
         stack = ElementStack(el)
         econtext = dict(vars)
         econtext["repeat"] = lambda name, it: [0, len(it)]
         rcontext = dict()
-        self.__render(stack, econtext, rcontext)
+        __render(stack, econtext, rcontext)
         return stack.current
+
+    return render
 
 class TemplateRegistry(object):
     def __init__(self):
@@ -53,6 +53,7 @@ class TemplateRegistry(object):
         nm = self.get_namespace(namespace)
         template = PageTemplate(render)
         nm[name] = template
+        return template
 
     def register_py(self, package, filename):
         import pkg_resources
@@ -64,7 +65,7 @@ class TemplateRegistry(object):
         env = {}
         exec(compiled, env)
         name, ext = os.path.splitext(filename)
-        self.register(package, name, env["render"])
+        return self.register(package, name, env["render"])
 
     def get(self, namespace, name):
         if namespace not in self.registry:

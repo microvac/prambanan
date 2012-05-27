@@ -278,8 +278,9 @@
         reverse: function (a) {
             return a.reverse();
         },
-        sorted: function(l){
-            return _.sortBy(l, function(i){return i;});
+        sorted: function(l, key){
+            key = helpers.get_arg(1, "key", arguments, function(i){return i;});
+            return _.sortBy(l, fn);
         },
         enumerate: function(o){
             return _.map(o, function(i, idx){return [idx, i]})
