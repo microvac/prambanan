@@ -1,20 +1,19 @@
-import os
+from prambanan.compiler import *
+from prambanan.compiler.provider import PrambananProvider
+from os.path import *
+from pkg_resources import resource_filename
+import pkg_resources
 
-dir = os.path.dirname(os.path.realpath(__file__))
-f = lambda n: os.path.join(dir, n)
+pylib_dir = resource_filename("prambanan", "pylib/")
 
-job_configs = [
-        {
-        "files": [f("math.py"), f("time.py"), f("datetime.py")],
-        "output": f(os.path.join("..", "js")),
-        "type_warning": False,
-        },
-]
+class MainPrambananProvider(PrambananProvider):
+    modules = {
+        "math": PythonModule(join(pylib_dir, "math.py"), "math"),
+        "time": PythonModule(join(pylib_dir, "time.py"), "time"),
+        "datetime": PythonModule(join(pylib_dir, "datetime.py"), "datetime", ["time"]),
+    }
+    def get_overridden_types(self):
+        return {}
 
-configs = [
-        {
-        "files": [f("."), f("lib")],
-        "output": "prambanan.stdlib.js",
-        "base_namespace": "",
-        },
-]
+    def get_modules(self):
+        return self.modules.copy()

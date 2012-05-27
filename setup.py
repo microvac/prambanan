@@ -24,7 +24,7 @@ setup(name='prambanan',
       ],
       entry_points="""
       [prambanan.provider]
-      main = prambanan.prambanan_provider:MainPrambananProvider
+      main = prambanan.__prambanan__:MainPrambananProvider
       [console_scripts]
       prambanan = prambanan.cmd:main
       """
