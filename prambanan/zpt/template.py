@@ -28,17 +28,18 @@ class ElementStack(object):
         self.current.attrib[name] = value
     a = attr
 
-def PageTemplate(__render):
+class PageTemplate(object):
 
-    def render(el, encoding=None, translate=None, target_languange=None, **vars):
+    def __init__(self, __render):
+        self.__render  = __render
+
+    def render(self, el, encoding=None, translate=None, target_languange=None, **vars):
         stack = ElementStack(el)
         econtext = dict(vars)
         econtext["repeat"] = lambda name, it: [0, len(it)]
         rcontext = dict()
-        __render(stack, econtext, rcontext)
+        self.__render(stack, econtext, rcontext)
         return stack.current
-
-    return render
 
 class TemplateRegistry(object):
     def __init__(self):
