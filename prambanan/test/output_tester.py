@@ -7,6 +7,7 @@ from StringIO import StringIO
 from prambanan.cmd import generate_runtime, create_args, translate_parser,  generate, generate_parser
 from prambanan.compiler import translate, files_to_modules
 from prambanan import jsbeautifier
+from prambanan.compiler.manager import PrambananManager
 
 js_opt = jsbeautifier.BeautifierOptions()
 js_opt.jslint_happy = True
@@ -22,8 +23,9 @@ class OutputTester(object):
         self.src_dir = src_dir
         self.gen_dir = os.path.join(src_dir, "gen")
         self.runtime_file = os.path.join(self.gen_dir, "__runtime__.js")
+        self.manager = PrambananManager([])
         with open(self.runtime_file, "w") as f:
-            generate_runtime(create_args(translate_parser, output=f))
+            generate_runtime(create_args(translate_parser, output=f), self.manager)
 
     def execute(self, args):
         proc = subprocess.Popen(args,
@@ -48,7 +50,7 @@ class OutputTester(object):
         result_name = name+".js"
         with open(os.path.join(self.gen_dir, result_name), "w") as f:
             translate_args = create_args(generate_parser, import_warning=True, generate_imports=True, output=f)
-            generate(translate_args, files_to_modules([os.path.join(self.src_dir, name+".py")], self.src_dir))
+            generate(translate_args, self.manager, files_to_modules([os.path.join(self.src_dir, name+".py")], self.src_dir))
 
     def run(self):
         for dirname, dirnames, filenames in os.walk(self.src_dir):

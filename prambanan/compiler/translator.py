@@ -109,7 +109,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
         self.direct_visitors = direct_visitors
 
         self.input_name = config.get("input_name", "")
-        self.namespace = config.get("namespace", "")
+        self.modname = config.get("modname", "")
         self.warnings = config.get("warnings", {})
         self.bare = config.get("bare", False)
         self.translator = config.get("translator", gettext.NullTranslations().gettext)
@@ -178,12 +178,15 @@ class BaseTranslator(BufferedWriter, ASTWalker):
         try:
             for inferred in func.infer():
                 qname = inferred.qname()
-                if qname in self.overridden_types:
-                    return self.overridden_types[qname]
-                if isinstance(inferred, nodes.Class):
-                    is_class = True
-                elif isinstance(inferred, nodes.Function):
-                    is_func = True
+                if isinstance(qname, str):
+                    if qname.startswith("Module."):
+                        qname = "%s.%s" % (self.modname, qname[len("Module."):])
+                    if qname in self.overridden_types:
+                        return self.overridden_types[qname]
+                    if isinstance(inferred, nodes.Class):
+                        is_class = True
+                    elif isinstance(inferred, nodes.Function):
+                        is_func = True
         except (UnresolvableName, InferenceError):
             return None
 

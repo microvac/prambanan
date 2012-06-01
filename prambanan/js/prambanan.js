@@ -280,7 +280,7 @@
         },
         sorted: function(l, key){
             key = helpers.get_arg(1, "key", arguments, function(i){return i;});
-            return _.sortBy(l, fn);
+            return _.sortBy(l, key);
         },
         enumerate: function(o){
             return _.map(o, function(i, idx){return [idx, i]})

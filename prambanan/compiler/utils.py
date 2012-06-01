@@ -137,3 +137,4 @@ class Writer(object):
             self.indent_level += 1
         else:
             self.indent_level -= 1
+

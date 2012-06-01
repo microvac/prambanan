@@ -1,11 +1,49 @@
 from StringIO import StringIO
 from exceptions import SyntaxError
-from logilab.astng import nodes, builder
+from logilab.astng import nodes, builder, YES
+from logilab.astng.utils import ASTWalker
 import os
+import pkg_resources
 from .scopegenerator import ScopeGenerator
 from .target import targets
 from .utils import ParseError
-from .import_finder import ImportFinder
+
+import prambanan.compiler.astng_patch
+
+class ImportFinder(ASTWalker):
+
+    def __init__(self, modname):
+        ASTWalker.__init__(self, self)
+        self.imports = []
+        self.modname = modname
+
+    def set_context(self, a, b):
+        pass
+
+    def visit_from(self, i):
+        module = i.modname
+        level = i.level
+        while level > 0:
+            if module == "":
+                module = self.modname
+            else:
+                module = self.modname+"."+module
+            level -= 1
+        if module not in [self.modname+".native", self.modname+"_native", self.modname]:
+            self.imports.append(module)
+
+    def visit_import(self, i):
+        for name, asname in i.names:
+            importname = name
+            if importname != self.modname:
+                self.imports.append(importname)
+
+    @staticmethod
+    def find_imports(file, modname):
+        tree = builder.ASTNGBuilder().file_build(file)
+        finder = ImportFinder(modname)
+        finder.walk(tree)
+        return set(finder.imports)
 
 class Module(object):
     def __init__(self, dependencies):
@@ -25,13 +63,13 @@ class JavascriptModule(Module):
             yield ("js", path, None)
 
 class PythonModule(Module):
-    def __init__(self, path, namespace):
+    def __init__(self, path, modname):
         self.path = path
-        self.namespace = namespace
-        super(PythonModule, self).__init__(ImportFinder.find_imports(path, namespace))
+        self.modname = modname
+        super(PythonModule, self).__init__(ImportFinder.find_imports(path, modname))
 
     def files(self):
-        yield ("py", self.path, self.namespace)
+        yield ("py", self.path, self.modname)
 
 class DirectoryModule(Module):
     def __init__(self, children, dependencies=None):
@@ -51,6 +89,20 @@ class DirectoryModule(Module):
             for child_item in child.files():
                 yield child_item
 
+__base_js_lib = lambda name: pkg_resources.resource_filename("prambanan", "js/lib/"+name)
+__base_js = lambda name: pkg_resources.resource_filename("prambanan", "js/"+name)
+__base_py = lambda name: pkg_resources.resource_filename("prambanan", name)
+
+RUNTIME_MODULES = []
+RUNTIME_MODULES.append(JavascriptModule([
+    __base_js_lib("underscore.js"),
+    __base_js_lib("backbone.js"),
+    __base_js("prambanan.js"),
+    ]))
+RUNTIME_MODULES.append(PythonModule(__base_py("__init__.py"), "prambanan"))
+RUNTIME_MODULES.append(PythonModule(__base_py("pylib/builtins.py"), "__builtin__"))
+
+
 def files_to_modules(files, base_directory):
     for file in  files:
         if os.path.isdir(file):
@@ -61,10 +113,10 @@ def files_to_modules(files, base_directory):
             if ext == ".py":
                 dir_name = os.path.dirname(os.path.abspath(file))
                 rel_dir = os.path.dirname(os.path.relpath(file, base_directory))
-                base_namespace = ".".join(os.path.split(rel_dir))[1:]
-                module_name = name if name != "__init__" else os.path.basename(dir_name)
-                namespace = module_name if base_namespace == "" else "%s.%s" % (base_namespace, module_name)
-                yield PythonModule(file, namespace)
+                base_modname = ".".join(os.path.split(rel_dir))[1:]
+                file_modname = name if name != "__init__" else os.path.basename(dir_name)
+                modname = file_modname if base_modname == "" else "%s.%s" % (base_modname, file_modname)
+                yield PythonModule(file, modname)
             elif ext == ".js":
                 yield JavascriptModule(file)
             else:
@@ -122,14 +174,14 @@ def py_visit_module(self, mod):
         exported = (self.exe_first_differs(sorted(set(self.public_identifiers)), rest_text=",",
             do_visit=lambda name: self.write("%s: %s" % (name, get_name(name)))))
 
-        self.write("%s.exports('%s',{%s});})(%s);" % (self.LIB_NAME, self.namespace, exported, self.LIB_NAME))
+        self.write("%s.exports('%s',{%s});})(%s);" % (self.LIB_NAME, self.modname, exported, self.LIB_NAME))
 
     builtin_var = None
     builtins = set(self.mod_scope.all_used_builtins())
     if len(builtins) > 0:
         builtin_var = self.curr_scope.generate_variable("__builtin__")
         for builtin in builtins:
-            if self.namespace != "__builtin__" or builtin not in self.public_identifiers:
+            if self.modname != "__builtin__" or builtin not in self.public_identifiers:
                 self.curr_scope.declare_variable(builtin)
 
     self.change_buffer(self.HEADER_BUFFER)
@@ -138,7 +190,7 @@ def py_visit_module(self, mod):
     if len(builtins) > 0:
         self.write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
         for builtin in builtins:
-            if self.namespace != "__builtin__" or builtin not in self.public_identifiers:
+            if self.modname != "__builtin__" or builtin not in self.public_identifiers:
                 self.write("%s = %s.%s;" %(builtin, builtin_var, builtin))
 
     for item in self.util_names.values():
@@ -149,24 +201,24 @@ def py_visit_module(self, mod):
     self.curr_scope = None
 
 
-def translate_string(input,namespace="", target=None):
+def translate_string(input, manager,modname="", target=None):
     config = {}
     output = StringIO()
     config["bare"] = True
     config["input_name"] = None
     config["input_lines"] = [input]
     config["output"] = StringIO()
-    config["namespace"] = namespace
+    config["modname"] = modname
     config["use_throw_helper"] = True
     config["warnings"] = False
     config["use_throw_helper"] = False
 
     try:
-        tree = nodes.parse(input)
+        tree = builder.ASTNGBuilder(manager).string_build(input, modname)
     except SyntaxError as e:
         raise ParseError(e.msg, e.lineno, e.offset, True)
 
-    scope_gen = ScopeGenerator(config["namespace"], tree)
+    scope_gen = ScopeGenerator(config["modname"], tree)
 
     direct_handlers = {"module": py_visit_module}
     moo = targets.get_translator(target)(scope_gen.root_scope, direct_handlers, config)
@@ -174,10 +226,11 @@ def translate_string(input,namespace="", target=None):
     return config["output"].getvalue()
 
 
-def translate(config):
+def translate(config, manager):
     try:
-        tree = builder.ASTNGBuilder().string_build(config["input"], config["input_name"])
-        scope_gen = ScopeGenerator(config["namespace"], tree)
+        modname = config["modname"]
+        tree = builder.ASTNGBuilder(manager).string_build(config["input"], modname, config["input_name"])
+        scope_gen = ScopeGenerator(modname, tree)
         scope_gen.visit(tree)
 
         direct_handlers = {"module": py_visit_module}
@@ -190,4 +243,5 @@ def translate(config):
         e.input_name = config["input_name"]
         raise e
     except SyntaxError as e:
+
         raise ParseError(e.msg, e.lineno, e.offset, True, config["input_lines"], config["input_name"])

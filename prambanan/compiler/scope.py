@@ -33,7 +33,7 @@ class Scope(object):
                         "NotImplementedError"
     ]
 
-    def __init__(self, type, name, parent = None):
+    def __init__(self, type, qname, name, parent = None):
         """
         Parse the node as a new context. The parent must be another context
         object. Only Module, Class, Method and Function nodes are allowed.
@@ -43,6 +43,7 @@ class Scope(object):
         self.module_all = None
 
         self.type = type
+        self.qname = qname
         self.name = name
         self.parent = parent
 
@@ -55,6 +56,7 @@ class Scope(object):
         self.global_variables = []
         self.imports = {}
         self.used_builtins = []
+        self.annotations = {}
         self.list_comp_id = 0
 
 

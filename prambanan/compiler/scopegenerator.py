@@ -1,8 +1,11 @@
+from logilab.astng.bases import Instance
 from logilab.astng.utils import ASTWalker
 from logilab.astng import nodes
 from prambanan.compiler.utils import ParseError
+from .annotation import parse
 from scope import Scope
 
+import sys
 
 class ScopeGenerator(ASTWalker):
     """
@@ -11,7 +14,7 @@ class ScopeGenerator(ASTWalker):
 
     """
 
-    def __init__(self, namespace, node):
+    def __init__(self, modname, node):
         ASTWalker.__init__(self, self)
         self.node = node
         self.stack = []
@@ -21,16 +24,21 @@ class ScopeGenerator(ASTWalker):
         self.root_scope = None
 
 
-        self.namespace = namespace
+        self.modname = modname
 
         self.visit_if = self.visit_body
         self.visit_excepthandler = self.visit_body
 
+    def warn(self, s):
+        sys.stderr.write("WARN %s\n" % s)
 
 
     def push_scope(self, type, name):
+        qname_prefix = "%s." % self.modname if self.modname is not None else ""
+        qname = "%s%s" % (qname_prefix, name)
+
         self.stack.append(self.current_scope)
-        scope = Scope(type, name, self.current_scope)
+        scope = Scope(type, qname, name, self.current_scope)
 
         if self.current_scope is not None:
             self.current_scope.identifiers[name] = scope
@@ -51,6 +59,7 @@ class ScopeGenerator(ASTWalker):
                 node.lineno,
                 node.col_offset
                 )
+
 
         if node.__class__.__name__ == "Function":
             is_parent_class = self.current_scope.type == "Class"
@@ -77,6 +86,12 @@ class ScopeGenerator(ASTWalker):
         self.pop_scope()
 
     def visit_class(self, c):
+        if c.doc is not None:
+            annotations = parse(c, self)
+            if len(annotations["type"]) > 0:
+                c.attr_types.update(annotations["type"])
+
+
         self.current_scope.declare_variable(c.name)
         bases = filter(lambda b: not isinstance(b, nodes.Name) or b.name != "object", c.bases)
         if len(bases) == 0:
@@ -110,13 +125,13 @@ class ScopeGenerator(ASTWalker):
         level = i.level
         while level > 0:
             if module == "":
-                module = self.namespace
+                module = self.modname
             else:
-                module = self.namespace+"."+module
+                module = self.modname+"."+module
             level -= 1
         for name,asname in i.names:
             if name == "*":
-                if module in [self.namespace+".native", self.namespace+"_native"]:
+                if module in [self.modname+".native", self.modname+"_native"]:
                     continue
             varname = asname if asname else name
             self.current_scope.declare_variable(varname)

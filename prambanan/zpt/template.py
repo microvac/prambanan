@@ -39,7 +39,26 @@ class PageTemplate(object):
         econtext["repeat"] = lambda name, it: [0, len(it)]
         rcontext = dict()
         self.__render(stack, econtext, rcontext)
+
         return stack.current
+
+class LazyPageTemplate(object):
+
+    def __init__(self, package, filename):
+        self.package = package
+        self.filename = filename
+
+    def render(self, el, **vars):
+        import pkg_resources
+        from prambanan.zpt.compiler.ptparser import PTParser
+
+        file = pkg_resources.resource_filename(self.package, self.filename)
+        pt = PTParser(file)
+        compiled = compile(pt.code, self.filename, "exec")
+        env = {}
+        exec(compiled, env)
+        return PageTemplate(env["render"]).render(el, **vars)
+
 
 class TemplateRegistry(object):
     def __init__(self):
@@ -57,16 +76,13 @@ class TemplateRegistry(object):
         return template
 
     def register_py(self, package, filename):
-        import pkg_resources
         import os
-        from prambanan.zpt.compiler.ptparser import PTParser
-        file = pkg_resources.resource_filename(package, filename)
-        pt = PTParser(file)
-        compiled = compile(pt.code, filename, "exec")
-        env = {}
-        exec(compiled, env)
-        name, ext = os.path.splitext(filename)
-        return self.register(package, name, env["render"])
+
+        template = LazyPageTemplate(package, filename)
+        name,ext = os.path.splitext(filename)
+        nm = self.get_namespace(package)
+        nm[name] = template
+        return template
 
     def get(self, namespace, name):
         if namespace not in self.registry:

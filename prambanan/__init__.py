@@ -1,5 +1,5 @@
 from prambanan.jslib import underscore
-from prambanan.native import *
+from .native import *
 
 def JS(fn):
     return fn

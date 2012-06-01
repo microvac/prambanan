@@ -1,3 +1,4 @@
+from logilab.astng.exceptions import InferenceError
 import simplejson, re
 import sys
 
@@ -49,12 +50,12 @@ class JSDefaultTranslator(BaseTranslator):
         module = i.modname
         if i.level == 1:
             if module is None:
-                module = self.namespace
+                module = self.modname
             else:
-                module = self.namespace+"."+module
+                module = self.modname+"."+module
         for name,asname in i.names:
             if name == "*":
-                if module in [self.namespace+".native", self.namespace+"_native"]:
+                if module in [self.modname+".native", self.modname+"_native"]:
                     attrs = module.split(".")[1:]
                     m = __import__(module)
                     for attr in attrs:
@@ -136,6 +137,7 @@ class JSDefaultTranslator(BaseTranslator):
         self.write(")")
 
     def visit_assname(self, n):
+
         if n.name in utils.RESERVED_WORDS:
             if not n.name in self.translated_names:
                 self.translated_names[n.name] = self.mod_scope.generate_variable("__keyword_"+n.name)
@@ -337,17 +339,17 @@ class JSDefaultTranslator(BaseTranslator):
                 => c = [a, b]
 
         """
-        is_target_tuple = False
+        is_target_tuple_exists = False
         tuple_target = None
         for target in a.targets:
             if isinstance(target, nodes.Tuple):
-                is_target_tuple = True
+                is_target_tuple_exists = True
                 tuple_target = target
 
-        if is_target_tuple and len(a.targets) > 1:
+        if is_target_tuple_exists and len(a.targets) > 1:
             self.raise_error("tuple are not allowed on multiple assignment", tuple_target)
 
-        if is_target_tuple:
+        if is_target_tuple_exists:
             self.write("(function(_source){")
             tuple = a.targets[0]
             for i in range(0, len(target.elts)):
@@ -368,7 +370,7 @@ class JSDefaultTranslator(BaseTranslator):
         else:
             self.walk(a.value)
 
-        if is_target_tuple:
+        if is_target_tuple_exists:
             self.write(")")
         if isinstance(target, nodes.Subscript) and not target.simple:
             self.write(")")
@@ -432,7 +434,7 @@ class JSDefaultTranslator(BaseTranslator):
         functions and assignments.
 
         """
-        fullname = "t__%s_" % c.name if self.namespace == "" else "t_%s_%s" % (self.namespace.replace(".", "_"), c.name)
+        fullname = "t__%s_" % c.name if self.modname == "" else "t_%s_%s" % (self.modname.replace(".", "_"), c.name)
         ctor_name = self.curr_scope.generate_variable("%s" % fullname, declared=False)
         self.push_context(c.name)
 
