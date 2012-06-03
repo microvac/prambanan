@@ -80,7 +80,7 @@ RUNTIME_MODULES = []
 RUNTIME_MODULES.append(JavascriptModule([
     __base_js_lib("underscore.js"),
     __base_js_lib("backbone.js"),
-    __base_js("prambanan.js"),
+    __base_js("prambanan.runtime.js"),
     ], "__prambanan__"))
 RUNTIME_MODULES.append(PythonModule(__base_py("__init__.py"), "prambanan"))
 RUNTIME_MODULES.append(PythonModule(__base_py("pylib/builtins.py"), "__builtin__"))

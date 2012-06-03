@@ -201,12 +201,19 @@ def generate_modules(translate_args, output_manager, manager, modules):
 
     for module in  modules:
         for type, file, modname in module.files():
-            output_manager.add(file)
+            if type == "js":
+                preferred_name, ext = os.path.splitext(os.path.basename(file))
+            elif type == "py":
+                preferred_name = modname
+            else:
+                raise ValueError("type %s is not supported for file %s" % (type % file))
+
+            out_file = output_manager.add(file, preferred_name)
 
             if not manager.is_file_changed(file) and output_manager.is_output_exists(file):
                 continue
 
-            output_manager.start(file)
+            output_manager.start(out_file)
             if type == "js":
                 with open(file, "r") as f:
                     output_manager.out.write(f.read())
@@ -216,7 +223,6 @@ def generate_modules(translate_args, output_manager, manager, modules):
                 if translate_args.beautify:
                     output_manager.out.write(beautify(output.getvalue()))
             else:
-                output_manager.stop()
                 raise ValueError("type %s is not supported for file %s" % (type % file))
             output_manager.stop()
 
