@@ -89,6 +89,8 @@ class ScopeGenerator(ASTWalker):
         if c.doc is not None:
             annotations = parse(c, self)
             if len(annotations["type"]) > 0:
+                if (not hasattr(c, "attr_types")):
+                    c.args.arg_types = {}
                 c.attr_types.update(annotations["type"])
 
 

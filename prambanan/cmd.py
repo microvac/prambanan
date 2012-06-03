@@ -1,3 +1,5 @@
+import prambanan.compiler.astng_patch
+
 from StringIO import StringIO
 import os
 import sys

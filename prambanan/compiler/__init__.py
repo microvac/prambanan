@@ -1,3 +1,5 @@
+import prambanan.compiler.astng_patch
+
 from StringIO import StringIO
 from exceptions import SyntaxError
 from logilab.astng import nodes, builder, YES
@@ -7,8 +9,6 @@ import pkg_resources
 from .scopegenerator import ScopeGenerator
 from .target import targets
 from .utils import ParseError
-
-import prambanan.compiler.astng_patch
 
 class ImportFinder(ASTWalker):
 
