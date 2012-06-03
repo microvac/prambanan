@@ -97,7 +97,8 @@ class ScopeGenerator(ASTWalker):
         if len(bases) == 0:
             self.current_scope.use_builtin("object")
         for base in bases:
-            self.current_scope.check_builtin_usage(base.name)
+            if isinstance(base, nodes.Name):
+                self.current_scope.check_builtin_usage(base.name)
         self.visit_func_or_class(c)
 
     def visit_function(self, c):

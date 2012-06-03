@@ -60,10 +60,16 @@ class JSDefaultTranslator(BaseTranslator):
                     m = __import__(module)
                     for attr in attrs:
                         m = getattr(m, attr)
-                    for name in dir(m):
-                        if not name.startswith("__"):
-                            self.public_identifiers.append(name)
-                    self.write("".join(self.native))
+                    if hasattr(m, "__all__"):
+                        self.public_identifiers.extend(m.__all__)
+                    else:
+                        for name in dir(m):
+                            if not name.startswith("__"):
+                                self.public_identifiers.append(name)
+                    if self.native is not None:
+                        self.write("".join(self.native))
+                    else:
+                        sys.stderr.write("native imported but native.js isn't provided in %s \n" % self.input_name)
                     return
                 else:
                     self.raise_error("import * except native is not supported", i)
@@ -121,7 +127,7 @@ class JSDefaultTranslator(BaseTranslator):
                     if (not len(c.func.expr.args) == 2):
                         self.raise_error("Only python 2 simple super supported", c)
                     attrname = c.func.attrname
-                    self.write("%s(" % self.get_util_var_name("_super", "%s.helpers.super" % self.LIB_NAME))
+                    self.write("%s(" % self.get_util_var_name("_super", "%s.helpers.super" % self.lib_name))
                     self.write("this, '%s')" %  attrname)
                     method_written = True
 
@@ -174,7 +180,7 @@ class JSDefaultTranslator(BaseTranslator):
             args = self.exe_first_differs(o.right.elts, rest_text=",") if isinstance(o.right, nodes.Tuple) else self.exe_node(o.right)
             self.write("(%s).__mod__(%s)" % (self.exe_node(o.left), args))
         elif o.op == "**":
-            pow_helper = self.get_util_var_name("_pow", "%s.helpers.pow" % self.LIB_NAME)
+            pow_helper = self.get_util_var_name("_pow", "%s.helpers.pow" % self.lib_name)
             self.write("%s(%s, %s)" % (pow_helper, self.exe_node(o.left), self.exe_node(o.right)))
         else:
             chars, prec, assoc = utils.get_op_cpa(o.op)
@@ -242,7 +248,7 @@ class JSDefaultTranslator(BaseTranslator):
             if op == "in" or op == "not in":
                 if op == "not in":
                     self.write(" !")
-                in_helper = self.get_util_var_name("_in", "%s.helpers.in"%self.LIB_NAME)
+                in_helper = self.get_util_var_name("_in", "%s.helpers.in"%self.lib_name)
                 self.write(" %s(%s, %s) " % (in_helper, left_text[0], right_text))
             else:
                 self.write(" %s " % (utils.get_op(op)))
@@ -310,7 +316,7 @@ class JSDefaultTranslator(BaseTranslator):
         else:
             func = "l"
 
-        subscript = self.get_util_var_name("_subscript", ("%s.helpers.subscript" % self.LIB_NAME))
+        subscript = self.get_util_var_name("_subscript", ("%s.helpers.subscript" % self.lib_name))
         value = self.exe_node(s.value)
         with self.Executor() as args:
             if isinstance(s.slice, nodes.Index):
@@ -451,7 +457,7 @@ class JSDefaultTranslator(BaseTranslator):
         self.write("function %s(){ this.__init__.apply(this, arguments); } " % (ctor_name))
         if c.doc:
             self.write_docstring(c.doc)
-        create_class = self.get_util_var_name("_class", "%s.helpers.class" %self.LIB_NAME)
+        create_class = self.get_util_var_name("_class", "%s.helpers.class" %self.lib_name)
         self.write("%s = %s(%s, %s, function(){" % (c.name, create_class, ctor_name, bases_param))
 
 
@@ -479,7 +485,7 @@ class JSDefaultTranslator(BaseTranslator):
             content = self.exe_first_differs(attrs, rest_text = ",", do_visit = lambda(x): self.write("%s:%s" %(x, x)))
             self.write("{%s}"% content)
 
-        content = self.exe_first_differs([proto_only, cls_only, all_attrs], rest_text = ",", do_visit = lambda(x): write_attrs(x))
+        content = self.exe_first_differs([proto_only, cls_only, all_attrs], rest_text = ",", do_visit = write_attrs)
         self.write("return [%s]" % content)
 
 
@@ -576,7 +582,7 @@ class JSDefaultTranslator(BaseTranslator):
         if not has_catch_all:
             if has_first:
                 if self.use_throw_helper:
-                    throw = self.get_util_var_name("_throw", "%s.helpers.throw" % self.LIB_NAME)
+                    throw = self.get_util_var_name("_throw", "%s.helpers.throw" % self.lib_name)
                     file = self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
                     self.write("else { %s(%s, %s, %d); }"% (throw, ex_var, file, tf.lineno))
                 else:
@@ -627,7 +633,7 @@ class JSDefaultTranslator(BaseTranslator):
         results_var = self.curr_scope.generate_variable("_results")
 
         list_var = self.curr_scope.generate_variable("_list")
-        iter_name = self.get_util_var_name("_iter", "%s.helpers.iter" % self.LIB_NAME);
+        iter_name = self.get_util_var_name("_iter", "%s.helpers.iter" % self.lib_name);
 
         self.write("%s = []; " % results_var)
         self.write("%s = %s(%s); " % (list_var, iter_name, self.exe_node(f.iter)))
@@ -658,7 +664,7 @@ class JSDefaultTranslator(BaseTranslator):
         exc = self.exe_node(r.exc)
 
         if self.use_throw_helper:
-            throw = self.get_util_var_name("_throw", "%s.helpers.throw" %self.LIB_NAME)
+            throw = self.get_util_var_name("_throw", "%s.helpers.throw" %self.lib_name)
             file = self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
             self.write("%s(%s, %s, %d)"% (throw, exc, file, r.lineno))
         else:
@@ -687,7 +693,7 @@ class JSDefaultTranslator(BaseTranslator):
 
 
         """
-        if isinstance(t.value, str):
+        if isinstance(t.value, basestring):
             self.write(simplejson.dumps(self.translator(t.value)))
         elif isinstance(t.value, bool):
             self.write(str(t.value).lower())
@@ -696,7 +702,7 @@ class JSDefaultTranslator(BaseTranslator):
         elif t.value is None:
             self.write("null")
         else:
-            raise ValueError("const not recognized")
+            raise ValueError("const not recognized %s" )
 
     def visit_global(self, g):
         """

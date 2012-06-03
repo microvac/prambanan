@@ -52,15 +52,16 @@ class Module(object):
         self.dependencies = dependencies
 
 class JavascriptModule(Module):
-    def __init__(self, paths, dependencies=None):
+    def __init__(self, paths, modname, dependencies=None):
         if isinstance(paths, str):
             paths = [paths]
+        self.modname = modname
         self.paths = paths
         super(JavascriptModule, self).__init__(dependencies)
 
     def files(self):
         for path in self.paths:
-            yield ("js", path, None)
+            yield ("js", path, self.modname)
 
 class PythonModule(Module):
     def __init__(self, path, modname):
@@ -71,24 +72,6 @@ class PythonModule(Module):
     def files(self):
         yield ("py", self.path, self.modname)
 
-class DirectoryModule(Module):
-    def __init__(self, children, dependencies=None):
-        self.children = children
-        super(DirectoryModule, self).__init__(dependencies)
-
-    @staticmethod
-    def load(dir, dependencies=None):
-        config = os.path.abspath(os.path.join(dir, "__prambanan__.py"))
-        glbl = {"__file__": config}
-        execfile(config, glbl)
-        children = glbl["children"]
-        return DirectoryModule(children, dependencies)
-
-    def files(self):
-        for child in self.children:
-            for child_item in child.files():
-                yield child_item
-
 __base_js_lib = lambda name: pkg_resources.resource_filename("prambanan", "js/lib/"+name)
 __base_js = lambda name: pkg_resources.resource_filename("prambanan", "js/"+name)
 __base_py = lambda name: pkg_resources.resource_filename("prambanan", name)
@@ -98,30 +81,85 @@ RUNTIME_MODULES.append(JavascriptModule([
     __base_js_lib("underscore.js"),
     __base_js_lib("backbone.js"),
     __base_js("prambanan.js"),
-    ]))
+    ], "__prambanan__"))
 RUNTIME_MODULES.append(PythonModule(__base_py("__init__.py"), "prambanan"))
 RUNTIME_MODULES.append(PythonModule(__base_py("pylib/builtins.py"), "__builtin__"))
 
+class IgnoredFiles(object):
+
+    def __init__(self, dir):
+        self.dir = dir
+        self.ignored = []
+        ignore_file = os.path.join(dir, ".pramignore")
+        if os.path.exists(ignore_file):
+            with open(ignore_file) as f:
+                for line in f.readlines():
+                    self.ignored.append(line.strip())
+
+    def is_ignored(self, name):
+        abs_path = os.path.join(self.dir, name)
+
+        if name in self.ignored:
+            return True
+
+        if os.path.isdir(abs_path):
+            dir_init = os.path.join(abs_path, "__init__.py")
+            if os.path.exists(dir_init):
+                return False
+            else:
+                return True
+        else:
+            n, ext = os.path.splitext(name)
+            if ext != ".py":
+                return True
+            if n == "native" or n.endswith("_native") or n == "__prambanan__":
+                return True
+            return False
+
+def walk(top):
+
+    join, isdir = os.path.join, os.path.isdir
+
+    names = os.listdir(top)
+
+    dirs, nondirs = [], []
+    ignored = IgnoredFiles(top)
+    for name in names:
+        if not ignored.is_ignored(name):
+            if isdir(join(top, name)):
+                dirs.append(name)
+            else:
+                nondirs.append(name)
+
+    yield top, dirs, nondirs
+
+    for name in dirs:
+        new_path = join(top, name)
+        for x in walk(new_path):
+            yield x
 
 def files_to_modules(files, base_directory):
     for file in  files:
-        if os.path.isdir(file):
-            yield DirectoryModule.load(file)
+        base_name = os.path.basename(file)
+        name, ext = os.path.splitext(base_name)
+        dir_name = os.path.dirname(os.path.abspath(file))
+        rel_dir = os.path.dirname(os.path.relpath(file, base_directory))
+        base_modname = ".".join(os.path.split(rel_dir))
+        if base_modname.startswith("."):
+            base_modname = base_modname[1:]
+        if name == "__init__":
+            modname = base_modname
         else:
-            base_name = os.path.basename(file)
-            name, ext = os.path.splitext(base_name)
-            if ext == ".py":
-                dir_name = os.path.dirname(os.path.abspath(file))
-                rel_dir = os.path.dirname(os.path.relpath(file, base_directory))
-                base_modname = ".".join(os.path.split(rel_dir))[1:]
-                file_modname = name if name != "__init__" else os.path.basename(dir_name)
-                modname = file_modname if base_modname == "" else "%s.%s" % (base_modname, file_modname)
-                yield PythonModule(file, modname)
-            elif ext == ".js":
-                yield JavascriptModule(file)
-            else:
-                raise ValueError("extension not recognized: %s for file %s" % (ext, file))
+            modname = name if base_modname == "" else "%s.%s" % (base_modname, name)
+        yield PythonModule(file, modname)
 
+def package_to_modules(package):
+    dir = pkg_resources.resource_filename(package, "")
+    base_dir = os.path.join(dir, "..")
+    for dirname, dirnames, filenames in  walk(dir):
+        abs_files = [os.path.join(dirname, f) for f in filenames]
+        for result in files_to_modules(abs_files, base_dir):
+            yield result
 
 def py_visit_module(self, mod):
     """
@@ -136,7 +174,7 @@ def py_visit_module(self, mod):
         if mod.doc:
             self.write_docstring(self.mod_scope.docstring)
 
-        self.write("(function(%s) {" % self.LIB_NAME)
+        self.write("(function(%s) {" % self.lib_name)
         self.change_buffer(self.BODY_BUFFER)
 
         public_identifiers = self.mod_scope.module_all
@@ -146,7 +184,7 @@ def py_visit_module(self, mod):
 
     for k, v in self.export_map.items():
         self.mod_scope.declare_variable(k)
-        self.write("%s = %s.%s;" % (k, self.LIB_NAME, v))
+        self.write("%s = %s.%s;" % (k, self.lib_name, v))
 
     for stmt in mod.body:
         if isinstance(stmt, nodes.Assign) and len(stmt.targets) == 1 and\
@@ -174,7 +212,7 @@ def py_visit_module(self, mod):
         exported = (self.exe_first_differs(sorted(set(self.public_identifiers)), rest_text=",",
             do_visit=lambda name: self.write("%s: %s" % (name, get_name(name)))))
 
-        self.write("%s.exports('%s',{%s});})(%s);" % (self.LIB_NAME, self.modname, exported, self.LIB_NAME))
+        self.write("%s.exports('%s',{%s});})(prambanan);" % (self.lib_name, self.modname, exported))
 
     builtin_var = None
     builtins = set(self.mod_scope.all_used_builtins())
@@ -188,7 +226,7 @@ def py_visit_module(self, mod):
     self.write_variables()
 
     if len(builtins) > 0:
-        self.write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
+        self.write("%s = %s.import('__builtin__');" %(builtin_var, self.lib_name))
         for builtin in builtins:
             if self.modname != "__builtin__" or builtin not in self.public_identifiers:
                 self.write("%s = %s.%s;" %(builtin, builtin_var, builtin))
@@ -233,7 +271,9 @@ def translate(config, manager):
         scope_gen = ScopeGenerator(modname, tree)
         scope_gen.visit(tree)
 
-        direct_handlers = {"module": py_visit_module}
+        visit_module = config.get("visit_module", py_visit_module)
+
+        direct_handlers = {"module": visit_module}
         target = config.get("target", None)
         moo = targets.get_translator(target)(scope_gen.root_scope, direct_handlers, config)
         moo.walk(tree)

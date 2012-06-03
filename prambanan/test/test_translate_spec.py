@@ -29,7 +29,7 @@ def visit_module(self, mod):
     self.write_variables()
 
     if len(builtins) > 0:
-        self.write("%s = %s.import('__builtin__');" %(builtin_var, self.LIB_NAME))
+        self.write("%s = %s.import('__builtin__');" %(builtin_var, self.lib_name))
         for builtin in builtins:
             self.write("%s = %s.%s;" %(builtin, builtin_var, builtin))
 

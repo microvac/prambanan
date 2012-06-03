@@ -4,8 +4,8 @@ import os
 from lxml import etree
 import pkg_resources
 from StringIO import StringIO
+from prambanan.zpt import TemplateRegistry
 from prambanan.zpt.compiler.ptparser import PTParser
-from prambanan.zpt.template import TemplateRegistry
 
 dir = os.path.dirname(os.path.realpath(__file__))
 

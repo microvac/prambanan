@@ -8,6 +8,7 @@ from prambanan.cmd import generate_runtime, create_args, translate_parser,  gene
 from prambanan.compiler import translate, files_to_modules
 from prambanan import jsbeautifier
 from prambanan.compiler.manager import PrambananManager
+from prambanan.output import SingleOutputManager
 
 js_opt = jsbeautifier.BeautifierOptions()
 js_opt.jslint_happy = True
@@ -18,14 +19,17 @@ class OutputTester(object):
 
     rhino_path = os.path.join(dir, "rhino.jar")
     run_js = os.path.join(dir, "run_rhino.js")
+    env_js = os.path.join(dir, "env.rhino.1.2.js")
 
-    def __init__(self, src_dir):
+    def __init__(self, src_dir, use_env=False):
         self.src_dir = src_dir
         self.gen_dir = os.path.join(src_dir, "gen")
         self.runtime_file = os.path.join(self.gen_dir, "__runtime__.js")
+        self.use_env = use_env
         self.manager = PrambananManager([])
         with open(self.runtime_file, "w") as f:
-            generate_runtime(create_args(translate_parser, output=f), self.manager)
+            output_manager = SingleOutputManager(f)
+            generate_runtime(create_args(translate_parser), output_manager, self.manager)
 
     def execute(self, args):
         proc = subprocess.Popen(args,
@@ -36,7 +40,10 @@ class OutputTester(object):
         return stdout.replace("\r\n", "\n")
 
     def create_rhino_args(self, name):
-        args = ["java", "-jar", self.rhino_path, self.run_js]
+        if self.use_env:
+            args = ["java", "-jar", self.rhino_path, "-opt", "-1", self.run_js, self.env_js]
+        else:
+            args = ["java", "-jar", self.rhino_path, self.run_js]
         args.append(self.runtime_file)
         args.append(os.path.join(self.gen_dir, name+".js"))
         return args
@@ -49,8 +56,9 @@ class OutputTester(object):
     def py_to_js(self, name):
         result_name = name+".js"
         with open(os.path.join(self.gen_dir, result_name), "w") as f:
+            output_manager = SingleOutputManager(f)
             translate_args = create_args(generate_parser, import_warning=True, generate_imports=True, output=f)
-            generate(translate_args, self.manager, files_to_modules([os.path.join(self.src_dir, name+".py")], self.src_dir))
+            generate(translate_args, output_manager, self.manager, files_to_modules([os.path.join(self.src_dir, name+".py")], self.src_dir))
 
     def run(self):
         for dirname, dirnames, filenames in os.walk(self.src_dir):
@@ -94,8 +102,8 @@ def make_setup_method(tester, name, print_output):
         self.assertEquals(js, py)
     return result
 
-def directory_tester(src_dir, print_output=False, files=None):
-    tester = OutputTester(src_dir)
+def directory_tester(src_dir, print_output=False, files=None, use_env=False):
+    tester = OutputTester(src_dir, use_env)
     def dec(cls):
         if src_dir is not None:
             for dirname, dirnames, filenames in os.walk(src_dir):

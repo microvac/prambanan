@@ -55,6 +55,10 @@ from chameleon.utils import builtins
 from chameleon.utils import decode_htmlentities
 from prambanan.zpt import getitem, deleteitem, convert_str
 
+convert_str.__module__ = "prambanan.zpt"
+deleteitem.__module__ = "prambanan.zpt"
+getitem.__module__ = "prambanan.zpt"
+
 
 if version >= (3, 0, 0):
     long = int

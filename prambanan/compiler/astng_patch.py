@@ -34,3 +34,10 @@ def infer_subscript(self, context=None):
 
 nodes.Subscript.infer = path_wrapper(infer_subscript)
 
+def infer_ifexp(self, context=None):
+    for inferred in self.body.infer(context):
+        yield inferred
+    for inferred in self.orelse.infer(context):
+        yield inferred
+nodes.IfExp.infer = path_wrapper(infer_ifexp)
+

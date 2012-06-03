@@ -16,6 +16,8 @@ import ast
 from chameleon.zpt.template import Macros, PageTemplate
 from prambanan.zpt import lookup_attr
 
+lookup_attr.__module__ = "prambanan.zpt"
+
 __author__ = 'egoz'
 
 def transform_attribute(node):

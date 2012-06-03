@@ -97,13 +97,12 @@ class BufferedWriter(object):
         self.curr_writer = Writer(self.BODY_BUFFER, self.BUFFER_NAMES)
 
 class BaseTranslator(BufferedWriter, ASTWalker):
-    LIB_NAME = "prambanan"
-
     def __init__(self, scope, direct_visitors, config):
         ASTWalker.__init__(self, self)
         BufferedWriter.__init__(self, config["output"], self.walk)
         self.mod_scope = scope
         self.curr_scope = None
+        self.lib_name = scope.generate_variable("prambanan", False)
 
         self.input_lines = config["input_lines"]
         self.direct_visitors = direct_visitors
@@ -215,7 +214,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
             names.append(stmt.name)
         if isinstance(stmt, nodes.Assign):
             for target in stmt.targets:
-                if isinstance(target, nodes.Name):
+                if isinstance(target, nodes.AssName):
                     names.append(target.name)
         return names
 
@@ -319,7 +318,8 @@ class BaseTranslator(BufferedWriter, ASTWalker):
             header = self.exe_node(dec)
             current = "%s(%s)" % (header, current)
 
-        self.write(";%s = %s" % (stmt.name, current))
+        if stmt.name != current:
+            self.write(";%s = %s" % (stmt.name, current))
 
     def write_call_args(self, args, comma_first=False):
         """
@@ -333,7 +333,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
                 self.write(", ")
             first = False
             if isinstance(arg, nodes.Keyword):
-                make_kwargs = self.get_util_var_name("_make_kwargs", "%s.helpers.make_kwargs" % self.LIB_NAME)
+                make_kwargs = self.get_util_var_name("_make_kwargs", "%s.helpers.make_kwargs" % self.lib_name)
                 kwargs = self.exe_first_differs(args.args[i:], rest_text=",",do_visit=lambda arg: self.write("%s:%s" % (arg.arg, (self.exe_node(arg.value)))))
                 self.write("%s({%s})" % (make_kwargs, kwargs))
                 break
@@ -397,13 +397,13 @@ class BaseTranslator(BufferedWriter, ASTWalker):
         """
         if len(args.defaults) > 0 or args.vararg is not None or args.kwarg is not None:
             args_name = self.curr_scope.generate_variable("_args")
-            init_args = self.get_util_var_name("_init_args", ("%s.helpers.init_args" % self.LIB_NAME))
+            init_args = self.get_util_var_name("_init_args", ("%s.helpers.init_args" % self.lib_name))
             self.write("%s = %s(arguments);" % (args_name , init_args))
 
         if len(args.defaults) > 0:
             first = len(args.args) - len(args.defaults)
             for i in xrange(len(args.defaults)):
-                get_arg = self.get_util_var_name("_get_arg", ("%s.helpers.get_arg" % self.LIB_NAME))
+                get_arg = self.get_util_var_name("_get_arg", ("%s.helpers.get_arg" % self.lib_name))
                 arg_name = self.exe_node(args.args[first+i])
                 index = first + i;
                 if strip_first:
@@ -411,14 +411,14 @@ class BaseTranslator(BufferedWriter, ASTWalker):
                 self.write("%s = %s(%d, \"%s\", %s, %s);" % (arg_name, get_arg, index, arg_name, args_name, self.exe_node(args.defaults[i])))
 
         if args.vararg is not None:
-            get_varargs = self.get_util_var_name("_get_varargs", ("%s.helpers.get_varargs" % self.LIB_NAME))
+            get_varargs = self.get_util_var_name("_get_varargs", ("%s.helpers.get_varargs" % self.lib_name))
             index = len(args.args)
             if strip_first:
                 index -= 1
             self.write("%s = %s(%d, %s);" % (args.vararg, get_varargs, index, args_name))
 
         if args.kwarg is not None:
-            get_kwargs = self.get_util_var_name("_get_kwargs", ("%s.helpers.get_kwargs" % self.LIB_NAME))
+            get_kwargs = self.get_util_var_name("_get_kwargs", ("%s.helpers.get_kwargs" % self.lib_name))
             self.write("%s = %s(%s);" % (args.kwarg, get_kwargs, args_name))
 
 

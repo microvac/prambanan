@@ -10,20 +10,16 @@ from collections import OrderedDict
 from prambanan.compiler.manager import PrambananManager
 from prambanan.compiler.utils import ParseError
 
-from prambanan.jsbeautifier import beautify
-from prambanan.compiler import (
+from .jsbeautifier import beautify
+from .compiler import (
     files_to_modules,
     translate, JavascriptModule, PythonModule, RUNTIME_MODULES)
-from prambanan.compiler.provider import all_providers
-
+from .compiler.provider import all_providers
+from .output import DirectoryOutputManager, SingleOutputManager
 
 def create_translate_parser():
     parser = argparse.ArgumentParser(
         description="Translate python to javascript.")
-
-    parser.add_argument("-o", "--output",
-        type=argparse.FileType('w'), default=sys.stdout,
-        help="output file, or std output if empty")
 
     parser.add_argument("-t", "--target", dest="target",
         default = "", type=str,
@@ -60,11 +56,20 @@ def create_generate_parser():
         help="also generate imported module")
     parser.add_argument("--generate-runtime", action="store_true",
         help="also generate runtime library")
+    parser.add_argument("--imports", dest="imports",
+        default = "", type=str,
+        help="explicit imports (comma separated)")
 
     return parser
 
 def create_main_parser():
     parser = create_generate_parser()
+    parser.add_argument("-o", "--output_file",
+        type=str, default=None,
+        help="output file, or std output if empty")
+    parser.add_argument("-d", "--output_dir",
+        type=str, default=None,
+        help="output directory, or std output if empty")
     parser.add_argument('files', metavar='f', type=str, nargs='*',
         help='input filenames')
     return parser
@@ -113,7 +118,7 @@ def walk_imports(import_names, modules):
                 results[name] = value
     return results
 
-def translate_py_file(translate_args, manager, filename, modname, overridden_types):
+def translate_py_file(translate_args, output, manager, filename, modname, overridden_types):
     #warnings
     warnings = {}
     if translate_args.type_warning:
@@ -163,7 +168,7 @@ def translate_py_file(translate_args, manager, filename, modname, overridden_typ
 
     config = {
         "bare": translate_args.bare,
-        "output": translate_args.output,
+        "output": output,
         "target": translate_args.target,
         "modname": modname,
         "input_name": base_name,
@@ -183,50 +188,63 @@ def get_ovverridden_types():
     overridden_types = dict([ (n,f) for p in providers for n,f in p.get_overridden_types().items()])
     return overridden_types
 
-def generate_modules(translate_args, manager, modules):
+def get_available_modules():
+    providers = all_providers()
+    available_modules = dict([ (m.modname,m) for p in providers for m in p.get_modules()])
+    return available_modules
+
+
+def generate_modules(translate_args, output_manager, manager, modules):
     patch_astng_manager(manager)
 
     overridden_types = get_ovverridden_types()
 
     for module in  modules:
         for type, file, modname in module.files():
+            output_manager.add(file)
+
+            if not manager.is_file_changed(file) and output_manager.is_output_exists(file):
+                continue
+
+            output_manager.start(file)
             if type == "js":
                 with open(file, "r") as f:
-                    translate_args.output.write(f.read())
+                    output_manager.out.write(f.read())
             elif type == "py":
-                tmp_args = copy_args(translate_args, translate_parser, output=StringIO() if translate_args.beautify else translate_args.output)
-                translate_py_file(tmp_args, manager, file, modname, overridden_types)
+                output = StringIO() if translate_args.beautify else output_manager.out
+                translate_py_file(translate_args, output, manager, file, modname, overridden_types)
                 if translate_args.beautify:
-                    translate_args.output.write(beautify(tmp_args.output.getvalue()))
+                    output_manager.out.write(beautify(output.getvalue()))
             else:
+                output_manager.stop()
                 raise ValueError("type %s is not supported for file %s" % (type % file))
+            output_manager.stop()
 
-def generate_runtime(translate_args, manager):
-    generate_modules(translate_args, manager, RUNTIME_MODULES)
+def generate_runtime(translate_args, output_manager, manager):
+    generate_modules(translate_args, output_manager, manager, RUNTIME_MODULES)
 
 
-def generate_imports(translate_args, manager, import_names):
-    providers = all_providers()
-    available_modules = dict([ (n,m) for p in providers for n,m in p.get_modules().items()])
+def generate_imports(translate_args, output_manager, manager, import_names):
+    available_modules = get_available_modules()
 
     used_modules = walk_imports(import_names, available_modules)
     for name in import_names:
         if name not in used_modules and translate_args.import_warning:
             sys.stderr.write("WARN: cannot find module %s for import  \n" % name)
 
-    generate_modules(translate_args, manager, used_modules.values())
+    generate_modules(translate_args, output_manager, manager, used_modules.values())
 
-def generate(generate_args, manager, modules):
+def generate(generate_args, output_manager, manager, modules):
     modules = list(modules)
 
     translate_args = copy_args(generate_args, translate_parser)
     imports = [d for m in modules for d in m.dependencies]
     if generate_args.generate_runtime:
-        generate_runtime(translate_args, manager)
+        generate_runtime(translate_args, output_manager, manager)
     if generate_args.generate_imports:
-        generate_imports(translate_args, manager, imports)
+        generate_imports(translate_args, output_manager, manager, imports)
     if generate_args.generate_result:
-        generate_modules(translate_args, manager, modules)
+        generate_modules(translate_args, output_manager, manager, modules)
 
 def show_parse_error(e):
     if e.lineno is not None:
@@ -250,12 +268,25 @@ def main(argv=sys.argv[1:]):
     main_args = parse_args(argv, main_parser)
     modules = list(files_to_modules([os.path.abspath(f) for f in main_args.files], os.path.abspath("")))
     manager = PrambananManager(modules)
+
+    if main_args.output_file is not None:
+        output_manager = SingleOutputManager(open(main_args.output_file, "w"))
+    elif main_args.output_dir is not None:
+        if not os.path.exists(main_args.output_dir):
+            os.mkdir(main_args.output_dir)
+        output_manager = DirectoryOutputManager(main_args.output_dir)
+    else:
+        output_manager = SingleOutputManager(sys.stdout)
+
     generate_args = copy_args(main_args, generate_parser)
     try:
-        generate(generate_args, manager, modules)
+        generate(generate_args, output_manager, manager, modules)
     except ParseError as e:
         show_parse_error(e)
         return 1
+    finally:
+        if main_args.output_file is not None:
+            output_manager.out.close()
 
     return 0
 

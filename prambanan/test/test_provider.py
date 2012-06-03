@@ -16,6 +16,7 @@ class TestProvider(unittest.TestCase):
         providers = all_providers()
         modules = {}
         for provider in providers:
-            modules.update(provider.get_modules())
+            modules.update(dict([(m.modname, m) for m in provider.get_modules()]))
         print walk_imports(["colander"], modules).keys()
+
 

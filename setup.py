@@ -27,5 +27,6 @@ setup(name='prambanan',
       main = prambanan.__prambanan__:MainPrambananProvider
       [console_scripts]
       prambanan = prambanan.cmd:main
+      prambananzpt = prambanan.zpt.cmd:main
       """
   )

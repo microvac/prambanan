@@ -13,7 +13,7 @@ class PrambananProvider(object):
 
     def get_modules(self):
         """
-        return directory containing <module>:moduleitem
+        return list containing <module>:moduleitem
         """
         pass
 

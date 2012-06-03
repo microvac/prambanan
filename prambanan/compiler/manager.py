@@ -2,15 +2,27 @@ from logilab.astng.manager import ASTNGManager
 from prambanan.compiler import RUNTIME_MODULES
 from prambanan.compiler.provider import all_providers
 
+import pickle
+import os
+
 class PrambananManager(ASTNGManager):
 
-    def __init__(self, modules):
+    def __init__(self, modules, file_stats_file=None):
         super(PrambananManager, self).__init__()
         self.mod_files ={}
 
+        self.file_stats_file = file_stats_file
+        if file_stats_file is not None:
+            if os.path.exists(file_stats_file):
+                self.file_stats = pickle.load(open(file_stats_file))
+            else:
+                self.file_stats = {}
+        else:
+            self.file_stats = None
+
         providers = all_providers()
-        providers_modules = dict([ (n,m) for p in providers for n,m in p.get_modules().items()])
-        all_modules = providers_modules.values() + modules + RUNTIME_MODULES
+        providers_modules = [ m for p in providers for m in p.get_modules()]
+        all_modules = providers_modules + modules + RUNTIME_MODULES
 
         for module in all_modules:
             for type, file, modname in module.files():
@@ -32,8 +44,24 @@ class PrambananManager(ASTNGManager):
 
         return super(PrambananManager, self).file_from_module_name(modname, contextfile)
 
+    def is_file_changed(self, file):
+        if self.file_stats is None:
+            return True
+
+        file_mtime = os.stat(file).st_mtime
+        prev_mtime = self.file_stats[file] if file in self.file_stats  else 0
+
+        if file_mtime > prev_mtime:
+            self.file_stats[file] = file_mtime
+            with open(self.file_stats_file, "w") as f:
+                pickle.dump(self.file_stats, f)
+            return True
+
+        return False
+
     def add_module(self, module):
         for type, file, modname in module.files():
             if type == "py":
                 self.mod_files[modname] = file
+
 

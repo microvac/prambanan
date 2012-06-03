@@ -3,9 +3,8 @@ from chameleon.zpt.template import PageTemplate
 import os
 from lxml import etree
 import pkg_resources
+from prambanan.zpt import TemplateRegistry
 import time
-
-from prambanan.zpt.template import TemplateRegistry
 
 dir = os.path.dirname(os.path.realpath(__file__))
 
