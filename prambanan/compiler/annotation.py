@@ -48,7 +48,7 @@ def make_list(make, next):
     return result
 
 def make_instance(node, qname):
-    modname, classname = qname.rsplit(".", 1)
+    modname, classname = qname.rsplit(":")
     return node.root().import_module(modname)[classname].instanciate_class()
 
 type_makers = {

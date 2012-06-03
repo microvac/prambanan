@@ -1,6 +1,7 @@
 from logilab.astng import nodes
 from logilab.astng.bases import YES, path_wrapper
 from logilab.astng.exceptions import InferenceError
+import logilab.astng.protocols as protocols
 
 def infer_subscript(self, context=None):
     """infer simple subscription such as [1,2,3][0] or (1,2,3)[-1]"""
@@ -40,4 +41,15 @@ def infer_ifexp(self, context=None):
     for inferred in self.orelse.infer(context):
         yield inferred
 nodes.IfExp.infer = path_wrapper(infer_ifexp)
+
+prev_infer_argname = protocols._arguments_infer_argname
+def arguments_infer_argname(self, name, context):
+    if hasattr(self, "arg_types") and name in self.arg_types:
+        yield self.arg_types[name]
+    else:
+        for inferred in prev_infer_argname(self, name, context):
+            yield inferred
+protocols._arguments_infer_argname = arguments_infer_argname
+
+
 

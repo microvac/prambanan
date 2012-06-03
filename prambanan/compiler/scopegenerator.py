@@ -102,6 +102,12 @@ class ScopeGenerator(ASTWalker):
         self.visit_func_or_class(c)
 
     def visit_function(self, c):
+        if c.doc is not None:
+            annotations = parse(c, self)
+            if len(annotations["type"]) > 0:
+                if (not hasattr(c.args, "arg_types")):
+                    c.args.arg_types = {}
+                c.args.arg_types.update(annotations["type"])
         self.current_scope.declare_variable(c.name)
         self.visit_func_or_class( c)
 
