@@ -1,6 +1,6 @@
 from logilab.astng.manager import ASTNGManager
 from prambanan.compiler import RUNTIME_MODULES
-from prambanan.compiler.provider import all_providers
+from prambanan.compiler.library import all_libraries
 
 import pickle
 import os
@@ -20,9 +20,9 @@ class PrambananManager(ASTNGManager):
         else:
             self.file_stats = None
 
-        providers = all_providers()
-        providers_modules = [ m for p in providers for m in p.get_modules()]
-        all_modules = providers_modules + modules + RUNTIME_MODULES
+        libraries = all_libraries()
+        libraries_modules = [ m for l in libraries for m in l.get_modules()]
+        all_modules = libraries_modules + modules + RUNTIME_MODULES
 
         for module in all_modules:
             for type, file, modname in module.files():

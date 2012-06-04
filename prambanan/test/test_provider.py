@@ -1,11 +1,11 @@
 import unittest
-from prambanan.compiler.provider import all_providers
+from prambanan.compiler.library import all_libraries
 from prambanan.cmd import walk_imports
 
 class TestProvider(unittest.TestCase):
 
     def test_all_providers(self):
-        providers = all_providers()
+        providers = all_libraries()
         self.assertGreater(len(providers), 0)
         for provider in providers:
             self.assertIsNotNone(provider.get_modules())
@@ -13,7 +13,7 @@ class TestProvider(unittest.TestCase):
 
 
     def test_walk_imports(self):
-        providers = all_providers()
+        providers = all_libraries()
         modules = {}
         for provider in providers:
             modules.update(dict([(m.modname, m) for m in provider.get_modules()]))

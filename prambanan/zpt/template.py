@@ -1,5 +1,5 @@
 import pkg_resources
-from prambanan.template import TemplateProvider
+from prambanan.template import Template
 
 class LazyPageTemplate(object):
 
@@ -18,12 +18,12 @@ class LazyPageTemplate(object):
         exec(compiled, env)
         return PageTemplate(env["render"]).render(el, **vars)
 
-class ZPTTemplateProvider(TemplateProvider):
+class ZPTTemplate(Template):
 
-    def get_template(self, template_config):
+    def get(self, template_config):
         package, filename = template_config
         return LazyPageTemplate(package, filename)
 
-    def compile_template(self, template_config, **kwargs):
+    def compile(self, template_config, **kwargs):
         pass
 

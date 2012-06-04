@@ -16,7 +16,7 @@ from .jsbeautifier import beautify
 from .compiler import (
     files_to_modules,
     translate, JavascriptModule, PythonModule, RUNTIME_MODULES)
-from .compiler.provider import all_providers
+from .compiler.library import all_libraries
 from .output import DirectoryOutputManager, SingleOutputManager
 
 def create_translate_parser():
@@ -186,13 +186,13 @@ def translate_py_file(translate_args, output, manager, filename, modname, overri
     return translate(config, manager)
 
 def get_ovverridden_types():
-    providers = all_providers()
-    overridden_types = dict([ (n,f) for p in providers for n,f in p.get_overridden_types().items()])
+    libraries = all_libraries()
+    overridden_types = dict([ (n,f) for l in libraries for n,f in l.get_overridden_types().items()])
     return overridden_types
 
 def get_available_modules():
-    providers = all_providers()
-    available_modules = dict([ (m.modname,m) for p in providers for m in p.get_modules()])
+    libraries = all_libraries()
+    available_modules = dict([ (m.modname,m) for l in libraries for m in l.get_modules()])
     return available_modules
 
 

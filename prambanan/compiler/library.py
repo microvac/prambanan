@@ -1,6 +1,6 @@
 import pkg_resources
 
-class PrambananProvider(object):
+class PrambananLibrary(object):
 
     def __init__(self, name):
         self.name = name
@@ -17,9 +17,9 @@ class PrambananProvider(object):
         """
         pass
 
-def all_providers():
+def all_libraries():
     providers = []
-    eps = list(pkg_resources.iter_entry_points('prambanan.provider'))
+    eps = list(pkg_resources.iter_entry_points('prambanan.library'))
     for entry in eps:
         provider_class = entry.load()
         provider = provider_class(entry.name)

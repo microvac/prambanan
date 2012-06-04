@@ -9,5 +9,5 @@ def items(d):
 
 def get_template(type, config):
     providers = prambanan.template.all_providers()
-    return providers[type].get_template(config)
+    return providers[type].get(config)
 

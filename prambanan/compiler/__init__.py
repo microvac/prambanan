@@ -112,7 +112,7 @@ class IgnoredFiles(object):
             n, ext = os.path.splitext(name)
             if ext != ".py":
                 return True
-            if n == "native" or n.endswith("_native") or n == "__prambanan__":
+            if n == "native" or n.endswith("_native"):
                 return True
             return False
 

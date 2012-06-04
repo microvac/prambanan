@@ -1,12 +1,12 @@
 from prambanan.compiler import *
-from prambanan.compiler.provider import PrambananProvider
+from prambanan.compiler.library import PrambananLibrary
 from os.path import *
 from pkg_resources import resource_filename
 import pkg_resources
 
 pylib_dir = resource_filename("prambanan", "pylib/")
 
-class MainPrambananProvider(PrambananProvider):
+class MainPrambananLibrary(PrambananLibrary):
     modules = [
         PythonModule(join(pylib_dir, "math.py"), "math"),
         PythonModule(join(pylib_dir, "time.py"), "time"),

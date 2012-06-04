@@ -1,9 +1,9 @@
 import pkg_resources
 
-class TemplateProvider(object):
-    def get_template(self, template_config):
+class Template(object):
+    def get(self, template_config):
         pass
-    def compile_template(self, template_config, **kwargs):
+    def compile(self, template_config, **kwargs):
         pass
 
 def all_providers():

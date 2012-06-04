@@ -1,11 +1,11 @@
 import unittest
-from prambanan.__prambanan__ import MainPrambananProvider
+from prambanan.pramlib import MainPrambananLibrary
 from prambanan.compiler import ImportFinder
 
 class TestImportFinder(unittest.TestCase):
 
     def test_datetime(self):
-        provider = MainPrambananProvider("prambanan")
+        provider = MainPrambananLibrary("prambanan")
         for module in provider.get_modules():
             if module.modname == "datetime":
                 dt = module

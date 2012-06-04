@@ -23,10 +23,10 @@ setup(name='prambanan',
           "logilab_astng",
       ],
       entry_points="""
-      [prambanan.provider]
-      main = prambanan.__prambanan__:MainPrambananProvider
+      [prambanan.library]
+      main = prambanan.pramlib:MainPrambananLibrary
       [prambanan.template]
-      zpt = prambanan.zpt.provider:ZPTTemplateProvider
+      zpt = prambanan.zpt.template:ZPTTemplate
       [console_scripts]
       prambanan = prambanan.cmd:main
       prambananzpt = prambanan.zpt.cmd:main
