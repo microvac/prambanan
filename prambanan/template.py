@@ -5,6 +5,8 @@ class Template(object):
         pass
     def compile(self, template_config, **kwargs):
         pass
+    def template_dependencies(self):
+        pass
 
 def all_providers():
     providers = {}
@@ -15,3 +17,5 @@ def all_providers():
         providers[entry.name] = provider
     return providers
 
+def get_provider(name):
+    return all_providers()[name]

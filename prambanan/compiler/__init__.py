@@ -9,6 +9,9 @@ import pkg_resources
 from .scopegenerator import ScopeGenerator
 from .target import targets
 from .utils import ParseError
+from ..template import get_provider
+
+import inference
 
 class ImportFinder(ASTWalker):
 
@@ -45,19 +48,54 @@ class ImportFinder(ASTWalker):
         finder.walk(tree)
         return set(finder.imports)
 
+class TemplateFinder(ASTWalker):
+
+    def __init__(self):
+        ASTWalker.__init__(self, self)
+        self.templates = {}
+
+    def set_context(self, a, b):
+        pass
+
+    def visit_callfunc(self, c):
+        if inference.infer_qname(c.func) == "prambanan.native.get_template":
+            template_type =  inference.ConstEvaluator().visit(c.args[0])
+            template_config = inference.ConstEvaluator().visit(c.args[1])
+            if not template_type in self.templates:
+                self.templates[template_type] = []
+            if not template_config in self.templates[template_type]:
+                self.templates[template_type].append(template_config)
+
+
+    @staticmethod
+    def find_templates(file):
+        tree = builder.ASTNGBuilder().file_build(file)
+        finder = TemplateFinder()
+        finder.walk(tree)
+        return finder.templates
+
 class Module(object):
-    def __init__(self, dependencies):
+    def __init__(self, dependencies, templates):
         if dependencies is None:
             dependencies = []
-        self.dependencies = dependencies
+        dependencies = list(dependencies)
+
+        if templates is None:
+            templates = {}
+        for type in templates:
+            provider = get_provider(type)
+            for dependency in provider.template_dependencies():
+                dependencies.append(dependency)
+        self.dependencies = set(dependencies)
+        self.templates = templates
 
 class JavascriptModule(Module):
-    def __init__(self, paths, modname, dependencies=None):
+    def __init__(self, paths, modname, dependencies=None, templates=None):
         if isinstance(paths, str):
             paths = [paths]
         self.modname = modname
         self.paths = paths
-        super(JavascriptModule, self).__init__(dependencies)
+        super(JavascriptModule, self).__init__(dependencies, templates)
 
     def files(self):
         for path in self.paths:
@@ -67,7 +105,7 @@ class PythonModule(Module):
     def __init__(self, path, modname):
         self.path = path
         self.modname = modname
-        super(PythonModule, self).__init__(ImportFinder.find_imports(path, modname))
+        super(PythonModule, self).__init__(ImportFinder.find_imports(path, modname), TemplateFinder.find_templates(path))
 
     def files(self):
         yield ("py", self.path, self.modname)

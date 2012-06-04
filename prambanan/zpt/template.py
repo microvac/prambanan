@@ -1,5 +1,7 @@
 import pkg_resources
-from prambanan.template import Template
+
+from cmd import generate
+from ..template import Template
 
 class LazyPageTemplate(object):
 
@@ -24,6 +26,9 @@ class ZPTTemplate(Template):
         package, filename = template_config
         return LazyPageTemplate(package, filename)
 
-    def compile(self, template_config, **kwargs):
-        pass
+    def compile(self, translate_args, output_manager, manager, template_configs):
+        generate(translate_args, output_manager, manager, template_configs)
+
+    def template_dependencies(self):
+        return ["prambanan.zpt"]
 

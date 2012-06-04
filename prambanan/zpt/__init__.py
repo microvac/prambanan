@@ -27,3 +27,4 @@ class PageTemplate(object):
         self.__render(stack, econtext, rcontext)
 
         return stack.current
+

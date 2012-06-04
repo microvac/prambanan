@@ -5,6 +5,7 @@
     function Module(){};
     var builtins = new Module();
     var slice = Array.prototype.slice;
+    prambanan.templates = {}
     /*
      Module import and exports
      */

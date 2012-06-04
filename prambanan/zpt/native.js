@@ -1,3 +1,5 @@
+var etree = 1;
+
 var getitem = function(econtext, name, dft){
     return econtext[name];
 };
@@ -34,5 +36,19 @@ var el_stack_attr = function(name, value){
 
     } else {
         this.current.setAttribute(name, value);
+    }
+}
+
+var __templates = window.prambanan.templates
+if (! __templates.zpt){
+    __templates.zpt = {
+        templates: {},
+        get_template: function(template_config){
+            return this.templates[template_config[0]][template_config[1]];
+        },
+        export: function(namespace, path, render){
+            var pack = this.templates[namespace] || (this.templates[namespace] = {})
+            pack[path] = new PageTemplate(render);
+        }
     }
 }

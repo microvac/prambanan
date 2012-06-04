@@ -40,59 +40,60 @@ def create_translate_parser():
 
     return parser
 
-def zpt_visit_module(self, mod):
-    """
-    Initial node.
-    There is and can be only one Module node.
+def make_visit(package, filename):
+    def zpt_visit_module(self, mod):
+        """
+        Initial node.
+        There is and can be only one Module node.
 
-    """
-    self.curr_scope = self.mod_scope
+        """
+        self.curr_scope = self.mod_scope
 
-    self.change_buffer(self.HEADER_BUFFER)
+        self.change_buffer(self.HEADER_BUFFER)
 
-    self.write("(function(%s) {" % self.lib_name)
-    self.change_buffer(self.BODY_BUFFER)
+        self.write("(function(%s) {" % self.lib_name)
+        self.change_buffer(self.BODY_BUFFER)
 
 
-    for stmt in mod.body:
-        self.visit(stmt)
-        if not isinstance(stmt, nodes.Import) and not isinstance(stmt, nodes.From) and not isinstance(stmt, nodes.Pass):
-            self.write_semicolon(stmt)
+        for stmt in mod.body:
+            self.visit(stmt)
+            if not isinstance(stmt, nodes.Import) and not isinstance(stmt, nodes.From) and not isinstance(stmt, nodes.Pass):
+                self.write_semicolon(stmt)
 
-    self.public_identifiers.append("render")
+        self.public_identifiers.append("render")
 
-    get_name = lambda name: name if name not in self.translated_names else self.translated_names[name]
-    exported = (self.exe_first_differs(sorted(set(self.public_identifiers)), rest_text=",",
-        do_visit=lambda name: self.write("%s: %s" % (name, get_name(name)))))
+        get_name = lambda name: name if name not in self.translated_names else self.translated_names[name]
+        exported = (self.exe_first_differs(sorted(set(self.public_identifiers)), rest_text=",",
+            do_visit=lambda name: self.write("%s: %s" % (name, get_name(name)))))
 
-    self.write("%s.exports('%s',{%s});})(prambanan);" % (self.lib_name, self.modname, exported))
+        self.write("%s.zpt.export('%s','%s', render);})(prambanan);" % (self.lib_name, package, filename))
 
-    builtin_var = None
-    builtins = set(self.mod_scope.all_used_builtins())
-    if len(builtins) > 0:
-        builtin_var = self.curr_scope.generate_variable("__builtin__")
-        for builtin in builtins:
-            if self.modname != "__builtin__" or builtin not in self.public_identifiers:
-                self.curr_scope.declare_variable(builtin)
+        builtin_var = None
+        builtins = set(self.mod_scope.all_used_builtins())
+        if len(builtins) > 0:
+            builtin_var = self.curr_scope.generate_variable("__builtin__")
+            for builtin in builtins:
+                if self.modname != "__builtin__" or builtin not in self.public_identifiers:
+                    self.curr_scope.declare_variable(builtin)
 
-    self.change_buffer(self.HEADER_BUFFER)
-    self.write_variables()
+        self.change_buffer(self.HEADER_BUFFER)
+        self.write_variables()
 
-    if len(builtins) > 0:
-        self.write("%s = %s.import('__builtin__');" %(builtin_var, self.lib_name))
-        for builtin in builtins:
-            if self.modname != "__builtin__" or builtin not in self.public_identifiers:
-                self.write("%s = %s.%s;" %(builtin, builtin_var, builtin))
+        if len(builtins) > 0:
+            self.write("%s = %s.import('__builtin__');" %(builtin_var, self.lib_name))
+            for builtin in builtins:
+                if self.modname != "__builtin__" or builtin not in self.public_identifiers:
+                    self.write("%s = %s.%s;" %(builtin, builtin_var, builtin))
 
-    for item in self.util_names.values():
-        name, value = item
-        self.write("%s = %s;" %(name, value))
+        for item in self.util_names.values():
+            name, value = item
+            self.write("%s = %s;" %(name, value))
 
-    self.flush_all_buffer()
-    self.curr_scope = None
+        self.flush_all_buffer()
+        self.curr_scope = None
+    return zpt_visit_module
 
-def translate_code(translate_args, filename, code, modname):
-    manager = PrambananManager([])
+def translate_code(translate_args, manager, output, code, package, path):
 
     #input
     lines = code.splitlines()
@@ -104,7 +105,7 @@ def translate_code(translate_args, filename, code, modname):
         locale_domain = translate_args.locale_domain
         locale_dir = translate_args.locale_dir
         if locale_domain is None:
-            locale_domain = modname
+            locale_domain = package
         if locale_dir is None:
             try:
                 locale_dir = pkg_resources.resource_filename(locale_domain, "locale/")
@@ -121,18 +122,31 @@ def translate_code(translate_args, filename, code, modname):
 
 
     config = {
-        "output": translate_args.output,
+        "output": output,
         "target": translate_args.target,
-        "modname": modname,
-        "input_name": filename,
-        "input_path": filename,
+        "modname": "",
+        "input_name": path,
+        "input_path": path,
         "input_lines": lines,
         "input": code,
         "translator": translator,
-        "visit_module": zpt_visit_module,
+        "visit_module": make_visit(package,path)
         }
 
     translate(config, manager)
+
+def generate(translate_args, output_manager, manager, configs):
+    for package, path in configs:
+        template_file = pkg_resources.resource_filename(package, path)
+        basename = os.path.basename(template_file)
+        name,ext = os.path.splitext(basename)
+        preferred_name = "zpt.%s.%s" % (package, path.replace("/", "."))
+        out_file = output_manager.add(template_file, preferred_name)
+        output_manager.start(out_file)
+        parser = PTParser(template_file)
+        translate_code(translate_args, manager, output_manager.out, parser.code, package, path)
+        output_manager.stop()
+
 
 def find_all_templates(dir):
     for dirname, dirnames, filenames in os.walk(dir):

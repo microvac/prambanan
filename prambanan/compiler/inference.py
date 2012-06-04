@@ -55,3 +55,27 @@ def is_instance(node, *args):
             return False
     return found
 
+class ConstEvaluator(object):
+    def visit(self, node):
+        return getattr(self, "visit_"+node.__class__.__name__.lower())(node)
+
+    def visit_name(self, n):
+        res = infer_one(n)
+        if res is None:
+            raise ValueError("cannot infer %n" % n.name)
+        return self.visit(res)
+
+    def visit_const(self, const):
+        return const.value
+
+    def visit_tuple(self, t):
+        result = []
+        for elt in t.elts:
+            result.append(self.visit(elt))
+        return tuple(result)
+
+    def visit_list(self, l):
+        result = []
+        for elt in l.elts:
+            result.append(self.visit(elt))
+        return result
