@@ -90,7 +90,7 @@ class IgnoredFiles(object):
     def __init__(self, dir):
         self.dir = dir
         self.ignored = []
-        ignore_file = os.path.join(dir, ".pramignore")
+        ignore_file = os.path.join(dir, "a.pramignore")
         if os.path.exists(ignore_file):
             with open(ignore_file) as f:
                 for line in f.readlines():

@@ -25,6 +25,8 @@ setup(name='prambanan',
       entry_points="""
       [prambanan.provider]
       main = prambanan.__prambanan__:MainPrambananProvider
+      [prambanan.template]
+      zpt = prambanan.zpt.provider:ZPTTemplateProvider
       [console_scripts]
       prambanan = prambanan.cmd:main
       prambananzpt = prambanan.zpt.cmd:main

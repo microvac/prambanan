@@ -27,31 +27,3 @@ class PageTemplate(object):
         self.__render(stack, econtext, rcontext)
 
         return stack.current
-
-class TemplateRegistry(object):
-    def __init__(self):
-        self.registry = {}
-
-    def get_namespace(self, namespace):
-        if namespace not in self.registry:
-            self.registry[namespace] = {}
-        return self.registry[namespace]
-
-    def register(self, namespace, name, render):
-        nm = self.get_namespace(namespace)
-        template = PageTemplate(render)
-        nm[name] = template
-        return template
-
-    def get(self, config):
-        namespace, name = config
-        if not prambanan.is_js and (namespace not in self.registry or name not in self.registry[namespace]):
-            registry_register_py(self, namespace, name)
-
-        if namespace not in self.registry:
-            raise KeyError("namespace %s not in template registry" % namespace)
-        nm = self.registry[namespace]
-        if name not in nm:
-            raise KeyError("template %s not in template namespace %s" % (name, namespace))
-
-        return nm[name]

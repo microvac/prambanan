@@ -1,5 +1,4 @@
 from lxml import etree
-import pkg_resources
 
 def getitem(econtext, name, default):
     return econtext.get(name, default)
@@ -41,25 +40,4 @@ def el_stack_text(self, text):
 def el_stack_attr(self, name, value):
     self.current.attrib[name] = value
 
-class LazyPageTemplate(object):
 
-    def __init__(self, package, filename):
-        self.package = package
-        self.filename = filename
-
-    def render(self, el, **vars):
-        from prambanan.zpt import PageTemplate
-        from prambanan.zpt.compiler.ptparser import PTParser
-
-        file = pkg_resources.resource_filename(self.package, self.filename)
-        pt = PTParser(file)
-        compiled = compile(pt.code, self.filename, "exec")
-        env = {}
-        exec(compiled, env)
-        return PageTemplate(env["render"]).render(el, **vars)
-
-def registry_register_py(self, package, filename):
-    template = LazyPageTemplate(package, filename)
-    nm = self.get_namespace(package)
-    nm[filename] = template
-    return template
