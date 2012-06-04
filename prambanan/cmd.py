@@ -15,7 +15,7 @@ from prambanan.compiler.utils import ParseError
 from .jsbeautifier import beautify
 from .compiler import (
     files_to_modules,
-    translate, JavascriptModule, PythonModule, RUNTIME_MODULES)
+    translate, RUNTIME_MODULES)
 from .compiler.library import all_libraries
 from .output import DirectoryOutputManager, SingleOutputManager
 

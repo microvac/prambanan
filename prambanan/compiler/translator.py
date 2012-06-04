@@ -7,6 +7,7 @@ import gettext
 from prambanan.compiler.utils import ParseError, Writer
 
 import utils
+import inference
 from .scope import Scope
 
 class BufferedWriter(object):
@@ -174,21 +175,17 @@ class BaseTranslator(BufferedWriter, ASTWalker):
 
         is_class = False
         is_func = False
-        try:
-            for inferred in func.infer():
-                qname = inferred.qname()
-                if isinstance(qname, str):
-                    if qname.startswith("Module."):
-                        qname = "%s.%s" % (self.modname, qname[len("Module."):])
-                    if qname in self.overridden_types:
-                        return self.overridden_types[qname]
-                    if isinstance(inferred, nodes.Class):
-                        is_class = True
-                    elif isinstance(inferred, nodes.Function):
-                        is_func = True
-        except (UnresolvableName, InferenceError):
-            return None
-
+        for inferred in inference.infer(func):
+            qname = inferred.qname()
+            if isinstance(qname, str):
+                if qname.startswith("Module."):
+                    qname = "%s.%s" % (self.modname, qname[len("Module."):])
+                if qname in self.overridden_types:
+                    return self.overridden_types[qname]
+                if isinstance(inferred, nodes.Class):
+                    is_class = True
+                elif isinstance(inferred, nodes.Function):
+                    is_func = True
         if is_class and is_func:
             return None
         if is_class:

@@ -27,6 +27,10 @@ class OutputTester(object):
         self.runtime_file = os.path.join(self.gen_dir, "__runtime__.js")
         self.use_env = use_env
         self.manager = PrambananManager([])
+
+        if not os.path.exists(self.gen_dir):
+            os.mkdir(self.gen_dir)
+
         with open(self.runtime_file, "w") as f:
             output_manager = SingleOutputManager(f)
             generate_runtime(create_args(translate_parser), output_manager, self.manager)

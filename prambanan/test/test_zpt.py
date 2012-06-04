@@ -4,7 +4,7 @@ import os
 from lxml import etree
 import pkg_resources
 from StringIO import StringIO
-from prambanan.zpt import TemplateRegistry
+import prambanan
 from prambanan.zpt.compiler.ptparser import PTParser
 
 dir = os.path.dirname(os.path.realpath(__file__))
@@ -26,9 +26,7 @@ class TestZptRegistry(unittest.TestCase):
         print "prambanan"
         print ""
         print ""
-        registry = TemplateRegistry()
-        registry.register_py("prambanan", "test/template/template.pt")
-        pt = registry.get("prambanan", "test/template/template")
+        pt = prambanan.get_template("zpt", ("prambanan", "test/template/template"))
         el = etree.Element("div")
         el = pt.render(el, a="lalal", b=["c", "d"], c=True, width=500, anu="4000")
         print etree.tostring(el)
