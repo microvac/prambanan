@@ -4,7 +4,11 @@ from .native import *
 def JS(fn):
     return fn
 
-def JSNoOp(target):
+def JS_noop_marker(target):
+    return target
+
+@JS_noop_marker
+def JS_noop(target):
     return target
 
 def select(fn, py, js):

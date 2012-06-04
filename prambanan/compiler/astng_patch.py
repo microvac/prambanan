@@ -36,7 +36,6 @@ class Instance(bases.Instance):
         if not found:
             raise InferenceError(name)
 
-Instance.anu = "kutumbaba"
 bases.Instance = protocols.Instance = logilab.astng.Instance = logilab.astng.builder.Instance = logilab.astng.scoped_nodes.Instance = Instance
 
 

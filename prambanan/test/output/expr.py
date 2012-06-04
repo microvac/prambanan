@@ -3,6 +3,7 @@ b = 8
 print a + 5
 print a * 5
 print a - b
+print b % 3
 print "eaaaa"+"aduuuh"
 
 print "tada %s" % "hmmm"

@@ -8,6 +8,7 @@ from prambanan.compiler.translator import BaseTranslator
 from prambanan.compiler.utils import ParseError, Writer
 
 import utils
+import inference
 
 class Targets(object):
     __default = None
@@ -112,7 +113,7 @@ class JSDefaultTranslator(BaseTranslator):
         method_written = False
         if isinstance(c.func, nodes.Name):
             call_type = "name"
-            if c.func.name == "JS":
+            if inference.infer_qname(c.func) == "prambanan.JS":
                 if len(c.args) != 1:
                     raise ParseError("native js only accept one argument", c.lineno, c.col_offset)
                 if not isinstance(c.args[0], nodes.Const) and not isinstance(c.args[0].value, str):
@@ -175,8 +176,7 @@ class JSDefaultTranslator(BaseTranslator):
         and currently the only spot where tuples are allowed.
 
         """
-        left_type = self.infer_type(o.left)
-        if o.op == "%" and left_type != "__builtin__.int":
+        if o.op == "%" and not inference.is_instance(o.left, self.create("int"), self.create("float")):
             args = self.exe_first_differs(o.right.elts, rest_text=",") if isinstance(o.right, nodes.Tuple) else self.exe_node(o.right)
             self.write("(%s).__mod__(%s)" % (self.exe_node(o.left), args))
         elif o.op == "**":
@@ -294,17 +294,24 @@ class JSDefaultTranslator(BaseTranslator):
         Translate a subscript expression.
 
         """
+        inferred_value = inference.infer_one(s.value)
+        if isinstance(inferred_value, nodes.Dict) or inference.inferred_is_of_class(inferred_value, self.create("dict")):
+            s.simple = True
+            self.write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
+            if isinstance(s.parent, nodes.Delete):
+                s.deleted = False
+            return
 
         #   optimize simple index slice
-        if isinstance(s.parent, nodes.Assign) or isinstance(s.parent, nodes.Discard):# or isinstance(s.parent, ast.Load) or isinstance(s.parent, ast.Store) :
-            if isinstance(s.slice, nodes.Index) and isinstance(s.slice.value, nodes.Const) and s.slice.value.value >= 0:
-                s.simple = True
-                self.write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
-                return
-            if isinstance(s.slice, nodes.Index) and isinstance(s.slice.value, nodes.Const) and isinstance(s.slice.value.value, str) :
-                s.simple = True
-                self.write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
-                return
+        if not isinstance(s.parent, nodes.Delete):
+            if isinstance(s.slice, nodes.Index):
+                inferred_index = inference.infer_one(s.slice.value)
+                if isinstance(inferred_value, nodes.List) or inference.inferred_is_of_class(inferred_value, self.create("list")):
+                    if isinstance(inferred_index, nodes.Const) and inferred_index.value >= 0:
+                        s.simple = True
+                        self.write('%s[%s]' % (self.exe_node(s.value), self.exe_node(s.slice.value)))
+                        return
+
 
         func = ""
         s.simple = True
@@ -418,13 +425,20 @@ class JSDefaultTranslator(BaseTranslator):
         list_var = self.curr_scope.generate_variable("_list")
         init = ""
 
+        iter_type = inference.infer_one(f.iter)
+        if isinstance(iter_type, nodes.List) or inference.inferred_is_of_class(iter_type, self.create("list")):
+            iter_value = self.exe_node(f.iter)
+        else:
+            iter_name = self.get_util_var_name("_iter", "%s.helpers.iter" % self.lib_name);
+            iter_value = "%s(%s)" % (iter_name, self.exe_node(f.iter))
+
         if not is_tuple:
             init = ("%s = %s[%s];" % (iter_var, list_var, i_var))
         else:
             for i in range(0, len(iter_var)):
                 init = init + ("%s = %s[%s][%d];" % (iter_var[i], list_var, i_var, i))
 
-        self.write("%s = %s;" % (list_var, self.exe_node(f.iter)))
+        self.write("%s = %s;" % (list_var, iter_value))
         self.write("for (%s = 0, %s = %s.length; %s < %s; %s++) {" % (i_var, len_var, list_var, i_var, len_var, i_var))
         self.write("   %s" % init)
         self.write("   %s" % self.exe_body(f.body))
@@ -535,7 +549,7 @@ class JSDefaultTranslator(BaseTranslator):
             self.write("%s = this;"%f.args.args[0].name)
 
         # Function body
-        if "JSNoOp" in decorators:
+        if "JS_noop" in decorators:
             self.write("return undefined;")
         else:
             self.write(self.exe_body(f.body, True, True))
@@ -755,7 +769,12 @@ class JSDefaultTranslator(BaseTranslator):
         """
         for target in d.targets:
             if isinstance(target, nodes.Subscript):
-                self.walk(target)
+                target.deleted = True
+                subscript = self.exe_node(target)
+                if target.deleted:
+                    self.write(subscript)
+                else:
+                    self.write("delete %s" % subscript)
             else:
                 self.write("delete %s" % self.exe_node(target))
 

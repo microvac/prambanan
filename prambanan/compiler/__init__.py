@@ -2,7 +2,7 @@ import prambanan.compiler.astng_patch
 
 from StringIO import StringIO
 from exceptions import SyntaxError
-from logilab.astng import nodes, builder, YES
+from logilab.astng import nodes, builder
 from logilab.astng.utils import ASTWalker
 import os
 import pkg_resources
@@ -267,7 +267,8 @@ def translate_string(input, manager,modname="", target=None):
 def translate(config, manager):
     try:
         modname = config["modname"]
-        tree = builder.ASTNGBuilder(manager).string_build(config["input"], modname, config["input_name"])
+        tree_modname = "" if modname == "__builtin__" else modname
+        tree = builder.ASTNGBuilder(manager).string_build(config["input"], tree_modname, config["input_path"])
         scope_gen = ScopeGenerator(modname, tree)
         scope_gen.visit(tree)
 

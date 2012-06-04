@@ -125,6 +125,7 @@ def translate_code(translate_args, filename, code, modname):
         "target": translate_args.target,
         "modname": modname,
         "input_name": filename,
+        "input_path": filename,
         "input_lines": lines,
         "input": code,
         "translator": translator,

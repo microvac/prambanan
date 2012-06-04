@@ -231,7 +231,7 @@ def asctime(t=None):
     if t is None:
         t = localtime()
     return "%s %s %02d %02d:%02d:%02d %04d" % (__c__days[(t.tm_wday-6)%7][:3],
-                                               __c__months[t.tm_mon-1],
+                                               __c__months[t.tm_mon-1][:3],
                                                t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, t.tm_year)
 
 def ctime(t=None):

@@ -1,4 +1,5 @@
 from logilab.astng.bases import Instance
+from logilab.astng.scoped_nodes import Module
 from logilab.astng.utils import ASTWalker
 from logilab.astng import nodes
 from prambanan.compiler.utils import ParseError
@@ -33,12 +34,16 @@ class ScopeGenerator(ASTWalker):
         sys.stderr.write("WARN %s\n" % s)
 
 
-    def push_scope(self, type, name):
+    def push_scope(self, type, node):
+        if isinstance(node, Module):
+            name = "Module"
+        else:
+            name = node.name
         qname_prefix = "%s." % self.modname if self.modname is not None else ""
         qname = "%s%s" % (qname_prefix, name)
 
         self.stack.append(self.current_scope)
-        scope = Scope(type, qname, name, self.current_scope)
+        scope = Scope(type, node, qname, name, self.current_scope)
 
         if self.current_scope is not None:
             self.current_scope.identifiers[name] = scope
@@ -63,7 +68,7 @@ class ScopeGenerator(ASTWalker):
 
         if node.__class__.__name__ == "Function":
             is_parent_class = self.current_scope.type == "Class"
-            self.push_scope("Method" if self.current_scope.type == "Class" else "Function", node.name)
+            self.push_scope("Method" if self.current_scope.type == "Class" else "Function", node)
             first = True
             for arg in node.args.args:
                 if not (first and is_parent_class):
@@ -71,11 +76,11 @@ class ScopeGenerator(ASTWalker):
                 if first:
                     first=False
         elif node.__class__.__name__ == "Class":
-            self.push_scope("Class", node.name)
+            self.push_scope("Class", node)
         elif node.__class__.__name__ == "ListComp":
-            self.push_scope("ListComp", node.name)
+            self.push_scope("ListComp", node)
         elif node.__class__.__name__ == "Module":
-            self.push_scope("Module", node.name)
+            self.push_scope("Module", node)
             self.root_scope = self.current_scope
 
 
@@ -114,7 +119,6 @@ class ScopeGenerator(ASTWalker):
         self.visit_func_or_class( c)
 
     def visit_module(self, m):
-        m.name = "Module"
         self.visit_func_or_class( m)
 
     def visit_listcomp(self, lc):

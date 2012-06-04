@@ -174,6 +174,7 @@ def translate_py_file(translate_args, output, manager, filename, modname, overri
         "target": translate_args.target,
         "modname": modname,
         "input_name": base_name,
+        "input_path": filename,
         "input_lines": lines,
         "input": input,
         "warnings": warnings,
@@ -237,7 +238,7 @@ def generate_imports(translate_args, output_manager, manager, import_names):
 
     used_modules = walk_imports(import_names, available_modules)
     for name in import_names:
-        if name not in used_modules and translate_args.import_warning:
+        if name not in used_modules and name != "prambanan" and translate_args.import_warning:
             sys.stderr.write("WARN: cannot find module %s for import  \n" % name)
 
     generate_modules(translate_args, output_manager, manager, used_modules.values())

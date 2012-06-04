@@ -93,10 +93,10 @@
      */
     var subscriptFunctions = {
         l: {
-            i: function(list, index){
-                return index >= 0
-                    ? list[index]
-                    : list[list.length + index]
+            i: function(obj, index){
+                if (obj.__getitem__)
+                    return obj.__getitem__(index);
+                return obj[index];
             },
             s: function(list, start, stop, step){
                 if(step == null){
@@ -116,14 +116,37 @@
             }
         },
         d: {
-            i: function(list, index){
-                list.remove(index);
+            i: function(obj, index){
+                if (obj.__delitem__){
+                    obj.__delitem__(index)
+                } else {
+                    delete obj[index]
+                }
             },
             s: function(list, start, stop, step){
                 if(step != null){
-                    throw new Error("delete slice with step not implemented");
+                    for (var i = start; i < stop; i+= step){
+                        this.i(list, i);
+                    }
                 }
                 list.remove(start, stop);
+            }
+        },
+        s: {
+            i: function(obj, index, value){
+                if(obj.__setitem__){
+                    obj.__setitem__(index, value);
+                }else{
+                    obj[index] = value;
+                }
+            },
+            s: function(list, start, stop, step, value){
+                if (step == null){
+                    step = 1;
+                }
+                for (var i = start, j = 0; i < stop; i+= step, j++){
+                    this.i(list, i, value[j])
+                }
             }
         }
     }
@@ -389,6 +412,11 @@
 
     (function(){
         var name = "python.Array";
+        var arrayRemove = function(from, to) {
+            var rest = this.slice((to - 1 || from) + 1 || this.length);
+            this.length = from < 0 ? this.length + from : from;
+            return this.push.apply(this, rest);
+        };
 
         prambanan.registerPrototypePatch(name, Array.prototype,  {
             insert: function(index, object){
@@ -400,11 +428,8 @@
             extend: function (list) {
                 this.push.apply(this, list);
             },
-            remove: function(from, to) {
-                var rest = this.slice((to - 1 || from) + 1 || this.length);
-                this.length = from < 0 ? this.length + from : from;
-                return this.push.apply(this, rest);
-            },
+            remove: arrayRemove,
+            __delitem__: arrayRemove,
             pop: function (index) {
                 if (_.isUndefined(index))
                     index = this.length-1;
@@ -425,6 +450,14 @@
                 }
                 result += "]";
                 return result;
+            },
+            __setitem__: function(index, value){
+                this[index] = value;
+            },
+            __getitem__: function(index){
+                return index < 0
+                    ? this[this.length + index]
+                    : this[index];
             }
         });
         prambanan.patch(name);

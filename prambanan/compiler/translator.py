@@ -194,16 +194,19 @@ class BaseTranslator(BufferedWriter, ASTWalker):
             return "Function"
         return None
 
-    def infer_type(self, node):
-        try:
-            results = list(node.infer())
-            if  len(results) != 1:
-                return None
-            return results[0].pytype()
+    def create(self, name):
+        if ":" in name:
+            module, attr = name.split(":")
+        else:
+            module = "__builtin__"
+            attr = name
 
-        except (UnresolvableName, InferenceError):
-            return None
+        root = self.mod_scope.node.root()
+        result = root.import_module(module)
+        for split in attr.split("."):
+            result = result[split]
 
+        return result
 
     def get_identifiers(self, stmt):
         names = []
@@ -215,6 +218,18 @@ class BaseTranslator(BufferedWriter, ASTWalker):
                     names.append(target.name)
         return names
 
+    def is_js_noop(self, dec):
+        inferred = list(inference.infer(dec))
+        if len(inferred) == 1:
+            inferred_dec = inferred[0]
+            if isinstance(inferred_dec, nodes.Function) and inferred_dec.decorators is not None:
+                for dec_dec in inferred_dec.decorators.nodes:
+                    if inference.infer_qname(dec_dec) == "prambanan.JS_noop_marker":
+                        return True
+        return False
+
+    def is_static_method(self, dec):
+        return inference.infer_qname(dec) == "__builtin__.staticmethod"
 
     def get_special_decorators(self, stmt):
         """
@@ -222,12 +237,13 @@ class BaseTranslator(BufferedWriter, ASTWalker):
 
         """
         decorators = {}
-        if isinstance(stmt, nodes.Function) and stmt.decorators is not None:
+        if stmt.decorators is not None:
             for dec in stmt.decorators.nodes:
-                if isinstance(dec, nodes.Name):
-                    if dec.name in ["staticmethod", "JSNoOp"] :
-                        decorators[dec.name] = []
-                        continue
+                if self.is_js_noop(dec):
+                    decorators["JS_noop"] = True
+                if isinstance(stmt, nodes.Function) and stmt.decorators is not None:
+                    if self.is_static_method(dec):
+                        decorators["staticmethod"] = True
         return decorators
 
     def push_context(self, identifier):
@@ -309,9 +325,8 @@ class BaseTranslator(BufferedWriter, ASTWalker):
             return
 
         for dec in stmt.decorators.nodes:
-            if isinstance(dec, nodes.Name):
-                if dec.name in ["staticmethod", "JSNoOp"] :
-                    continue
+            if self.is_js_noop(dec) or self.is_static_method(dec):
+                continue
             header = self.exe_node(dec)
             current = "%s(%s)" % (header, current)
 
