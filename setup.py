@@ -21,6 +21,7 @@ setup(name='prambanan',
           "simplejson",
           "chameleon",
           "logilab_astng",
+          "lxml",
       ],
       entry_points="""
       [prambanan.library]
