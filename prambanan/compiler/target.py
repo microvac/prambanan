@@ -1,6 +1,7 @@
 from logilab.astng.exceptions import InferenceError
 import simplejson, re
 import sys
+import logging
 
 from logilab.astng import nodes
 
@@ -9,6 +10,8 @@ from prambanan.compiler.utils import ParseError, Writer
 
 import utils
 import inference
+
+logger = logging.getLogger("prambanan")
 
 class Targets(object):
     __default = None
@@ -57,20 +60,16 @@ class JSDefaultTranslator(BaseTranslator):
         for name,asname in i.names:
             if name == "*":
                 if module in [self.modname+".native", self.modname+"_native"]:
-                    attrs = module.split(".")[1:]
-                    m = __import__(module)
-                    for attr in attrs:
-                        m = getattr(m, attr)
-                    if hasattr(m, "__all__"):
-                        self.public_identifiers.extend(m.__all__)
-                    else:
-                        for name in dir(m):
-                            if not name.startswith("__"):
-                                self.public_identifiers.append(name)
+                    m = i.root().import_module(module)
+                    for l_name, locals in m.locals.items():
+                        for l in locals:
+                            if isinstance(l, nodes.Function) or isinstance(l, nodes.AssName) or isinstance(l, nodes.Class):
+                                if not l_name.startswith("__") and l_name not in self.public_identifiers:
+                                    self.public_identifiers.append(l_name)
                     if self.native is not None:
                         self.write("".join(self.native))
                     else:
-                        sys.stderr.write("native imported but native.js isn't provided in %s \n" % self.input_name)
+                        logger.warn("native imported but native.js isn't provided in %s \n" % self.input_name)
                     return
                 else:
                     self.raise_error("import * except native is not supported", i)
@@ -133,7 +132,7 @@ class JSDefaultTranslator(BaseTranslator):
                     method_written = True
 
         if type is None and "type" in self.warnings:
-            sys.stderr.write(" Warning: Cannot infer type [ call: %s, name: %s ] in line %s\n" % (call_type, name, c.lineno ))
+            logger.warn(" Warning: Cannot infer type [ call: %s, name: %s ] in line %s\n" % (call_type, name, c.lineno ))
         elif type == "Class":
             self.write("new ")
 

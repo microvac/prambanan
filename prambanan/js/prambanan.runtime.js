@@ -16,10 +16,10 @@
             var current = modules;
             for(var i = 0; i < splitted.length; i++){
                 var key = splitted[i];
-                if(_.isUndefined(modules[key])){
-                    modules[key] = new Module();
+                if(_.isUndefined(current[key])){
+                    current[key] = new Module();
                 }
-                current = modules[key];
+                current = current[key];
             }
             return current;
 

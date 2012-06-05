@@ -66,7 +66,7 @@ def make_visit(package, filename):
         exported = (self.exe_first_differs(sorted(set(self.public_identifiers)), rest_text=",",
             do_visit=lambda name: self.write("%s: %s" % (name, get_name(name)))))
 
-        self.write("%s.zpt.export('%s','%s', render);})(prambanan);" % (self.lib_name, package, filename))
+        self.write("%s.templates.zpt.export('%s','%s', render);})(prambanan);" % (self.lib_name, package, filename))
 
         builtin_var = None
         builtins = set(self.mod_scope.all_used_builtins())
@@ -138,14 +138,19 @@ def translate_code(translate_args, manager, output, code, package, path):
 def generate(translate_args, output_manager, manager, configs):
     for package, path in configs:
         template_file = pkg_resources.resource_filename(package, path)
-        basename = os.path.basename(template_file)
-        name,ext = os.path.splitext(basename)
-        preferred_name = "zpt.%s.%s" % (package, path.replace("/", "."))
+        name,ext = os.path.splitext(path)
+        preferred_name = "zpt.%s.%s" % (package, name.replace("/", "."))
+
         out_file = output_manager.add(template_file, preferred_name)
+        if not manager.is_file_changed(template_file) and output_manager.is_output_exists(template_file):
+            continue
+
         output_manager.start(out_file)
         parser = PTParser(template_file)
         translate_code(translate_args, manager, output_manager.out, parser.code, package, path)
+
         output_manager.stop()
+        manager.mark_file_processed(template_file)
 
 
 def find_all_templates(dir):

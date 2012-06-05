@@ -3,6 +3,7 @@ import prambanan.compiler.astng_patch
 from StringIO import StringIO
 import os
 import sys
+import logging
 import argparse
 import gettext
 import pkg_resources
@@ -18,6 +19,8 @@ from .compiler import (
     translate, RUNTIME_MODULES)
 from .compiler.library import all_libraries
 from .output import DirectoryOutputManager, SingleOutputManager
+
+logger = logging.getLogger("prambanan")
 
 def create_translate_parser():
     parser = argparse.ArgumentParser(
@@ -120,14 +123,14 @@ def walk_imports(import_names, modules):
                 results[name] = value
     return results
 
-def translate_py_file(translate_args, output, manager, filename, modname, overridden_types):
+def translate_py_file(translate_args, output, manager, file, native_file, modname, overridden_types):
     #warnings
     warnings = {}
     if translate_args.type_warning:
         warnings["type"] = True
 
     #input
-    with open(filename, 'r') as f:
+    with open(file, 'r') as f:
         lines = f.readlines()
     input = StringIO("".join(lines)).read()
 
@@ -153,18 +156,10 @@ def translate_py_file(translate_args, output, manager, filename, modname, overri
     if translator is None:
         translator = gettext.NullTranslations().gettext
 
-
-    #native file
-    base_name = os.path.basename(filename)
-    dir_name = os.path.dirname(os.path.abspath(filename))
-    name, ext = os.path.splitext(base_name)
+    base_name = os.path.basename(file)
 
     native = None
-    if base_name == "__init__.py":
-        native_file = os.path.join(dir_name, "native.js")
-    else:
-        native_file = os.path.join(dir_name, name+"_native.js")
-    if os.path.isfile(native_file):
+    if native_file is not None:
         with open(native_file, "r") as f:
             native = f.readlines()
 
@@ -174,7 +169,7 @@ def translate_py_file(translate_args, output, manager, filename, modname, overri
         "target": translate_args.target,
         "modname": modname,
         "input_name": base_name,
-        "input_path": filename,
+        "input_path": file,
         "input_lines": lines,
         "input": input,
         "warnings": warnings,
@@ -204,17 +199,28 @@ def generate_modules(translate_args, output_manager, manager, modules):
 
     for module in  modules:
         for type, file, modname in module.files():
+            native_file = None
             if type == "js":
                 preferred_name, ext = os.path.splitext(os.path.basename(file))
             elif type == "py":
                 preferred_name = modname
+                base_name = os.path.basename(file)
+                dir_name = os.path.dirname(os.path.abspath(file))
+                name, ext = os.path.splitext(base_name)
+                if base_name == "__init__.py":
+                    native_file = os.path.join(dir_name, "native.js")
+                else:
+                    native_file = os.path.join(dir_name, name+"_native.js")
+                if not os.path.isfile(native_file):
+                    native_file = None
             else:
                 raise ValueError("type %s is not supported for file %s" % (type % file))
 
             out_file = output_manager.add(file, preferred_name)
-
-            if not manager.is_file_changed(file) and output_manager.is_output_exists(file):
-                continue
+            if output_manager.is_output_exists(file):
+                if (not manager.is_file_changed(file)) and \
+                    (native_file is None or (not manager.is_file_changed(native_file))):
+                    continue
 
             output_manager.start(out_file)
             if type == "js":
@@ -222,12 +228,15 @@ def generate_modules(translate_args, output_manager, manager, modules):
                     output_manager.out.write(f.read())
             elif type == "py":
                 output = StringIO() if translate_args.beautify else output_manager.out
-                translate_py_file(translate_args, output, manager, file, modname, overridden_types)
+                translate_py_file(translate_args, output, manager, file, native_file, modname, overridden_types)
                 if translate_args.beautify:
                     output_manager.out.write(beautify(output.getvalue()))
             else:
                 raise ValueError("type %s is not supported for file %s" % (type % file))
             output_manager.stop()
+            manager.mark_file_processed(file)
+            if native_file is not None:
+                manager.mark_file_processed(native_file)
 
 def generate_runtime(translate_args, output_manager, manager):
     generate_modules(translate_args, output_manager, manager, RUNTIME_MODULES)
@@ -239,7 +248,7 @@ def generate_imports(translate_args, output_manager, manager, import_names):
     used_modules = walk_imports(import_names, available_modules)
     for name in import_names:
         if name not in used_modules and name != "prambanan" and translate_args.import_warning:
-            sys.stderr.write("WARN: cannot find module %s for import  \n" % name)
+            logger.warn("cannot find module '%s' for import  \n" % name)
 
     generate_modules(translate_args, output_manager, manager, used_modules.values())
 
@@ -255,25 +264,28 @@ def generate(generate_args, output_manager, manager, modules):
     if generate_args.generate_result:
         generate_modules(translate_args, output_manager, manager, modules)
 
-def show_parse_error(e):
+def show_parse_error(out, e):
     if e.lineno is not None:
-        sys.stderr.write("%-6s  " % "")
-        sys.stderr.write("file '%s' line %d column %d:\n" %  (e.input_name, e.lineno, e.col_offset))
+        out.write("%-6s  " % "")
+        out.write("file '%s' line %d column %d:\n" %  (e.input_name, e.lineno, e.col_offset))
         lines = e.input_lines
         end_line = e.lineno
         start_line = e.lineno - 5
         if start_line < 0:
             start_line = 0
         for i in range(start_line, end_line):
-            sys.stderr.write("%-6d: %s" % (i+1, lines[i]))
-        sys.stderr.write("%-6s  " % "")
+            out.write("%-6d: %s" % (i+1, lines[i]))
+        out.write("%-6s  " % "")
         for i in range(0, e.col_offset):
-            sys.stderr.write(" ")
-        sys.stderr.write("^\n")
-    sys.stderr.write(str(e))
-    sys.stderr.write("\n")
+            out.write(" ")
+        out.write("^\n")
+    out.write(str(e))
+    out.write("\n")
 
 def main(argv=sys.argv[1:]):
+    FORMAT = "%(levelname)-10s: %(message)s"
+    logging.basicConfig(format=FORMAT)
+
     main_args = parse_args(argv, main_parser)
     modules = list(files_to_modules([os.path.abspath(f) for f in main_args.files], os.path.abspath("")))
     manager = PrambananManager(modules)
@@ -291,7 +303,7 @@ def main(argv=sys.argv[1:]):
     try:
         generate(generate_args, output_manager, manager, modules)
     except ParseError as e:
-        show_parse_error(e)
+        show_parse_error(sys.stderr, e)
         return 1
     finally:
         if main_args.output_file is not None:

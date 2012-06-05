@@ -1,5 +1,11 @@
 import os
 
+class OutputJob(object):
+
+    def __init__(self):
+        last_output
+
+
 class DirectoryOutputManager(object):
     out = None
 
@@ -8,6 +14,10 @@ class DirectoryOutputManager(object):
         self.files = []
         self.files_map = {}
         self.dir = dir
+        self.current_job_files = []
+
+    def new_job(self):
+        self.current_job_files = []
 
     def add(self, filename, preferred_name):
         if not filename in self.files_map:
@@ -24,6 +34,7 @@ class DirectoryOutputManager(object):
         return file
 
     def start(self, file):
+        self.current_job_files.append(file)
         self.stop()
         self.out = open(os.path.join(self.dir, file), "w")
 

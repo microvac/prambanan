@@ -1,5 +1,3 @@
-var etree = 1;
-
 var getitem = function(econtext, name, dft){
     return econtext[name];
 };

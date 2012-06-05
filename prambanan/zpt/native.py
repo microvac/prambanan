@@ -1,7 +1,5 @@
 from lxml import etree
 
-__all__ = ["getitem", "deleteitem", "convert_str", "lookup_attr", "el_stack_attr", "el_stack_pop", "el_stack_push", "el_stack_text"]
-
 def getitem(econtext, name, default):
     return econtext.get(name, default)
 

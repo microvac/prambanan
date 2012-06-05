@@ -6,12 +6,15 @@ from logilab.astng import nodes, builder
 from logilab.astng.utils import ASTWalker
 import os
 import pkg_resources
+import logging
 from .scopegenerator import ScopeGenerator
 from .target import targets
 from .utils import ParseError
 from ..template import get_provider
 
 import inference
+
+logger = logging.getLogger("prambanan")
 
 class ImportFinder(ASTWalker):
 
@@ -75,7 +78,9 @@ class TemplateFinder(ASTWalker):
         return finder.templates
 
 class Module(object):
-    def __init__(self, dependencies, templates):
+    def __init__(self, modname, dependencies, templates):
+        self.modname = modname
+
         if dependencies is None:
             dependencies = []
         dependencies = list(dependencies)
@@ -83,7 +88,12 @@ class Module(object):
         if templates is None:
             templates = {}
         for type in templates:
-            provider = get_provider(type)
+            try:
+                provider = get_provider(type)
+            except KeyError:
+                logger.warn("Cannot find template provider '%s' in module '%s' for templates %s" % (type, modname, templates[type]))
+                continue
+
             for dependency in provider.template_dependencies():
                 dependencies.append(dependency)
         self.dependencies = set(dependencies)
@@ -93,21 +103,24 @@ class JavascriptModule(Module):
     def __init__(self, paths, modname, dependencies=None, templates=None):
         if isinstance(paths, str):
             paths = [paths]
-        self.modname = modname
         self.paths = paths
-        super(JavascriptModule, self).__init__(dependencies, templates)
+        super(JavascriptModule, self).__init__(modname, dependencies, templates)
 
     def files(self):
         for path in self.paths:
             yield ("js", path, self.modname)
 
 class PythonModule(Module):
-    def __init__(self, path, modname):
+    def __init__(self, path, modname, js_deps=None):
+        if js_deps is None:
+            js_deps = []
+        self.js_deps = js_deps
         self.path = path
-        self.modname = modname
-        super(PythonModule, self).__init__(ImportFinder.find_imports(path, modname), TemplateFinder.find_templates(path))
+        super(PythonModule, self).__init__(modname, ImportFinder.find_imports(path, modname), TemplateFinder.find_templates(path))
 
     def files(self):
+        for path in self.js_deps:
+            yield ("js", path, self.modname)
         yield ("py", self.path, self.modname)
 
 __base_js_lib = lambda name: pkg_resources.resource_filename("prambanan", "js/lib/"+name)
@@ -128,7 +141,7 @@ class IgnoredFiles(object):
     def __init__(self, dir):
         self.dir = dir
         self.ignored = []
-        ignore_file = os.path.join(dir, "a.pramignore")
+        ignore_file = os.path.join(dir, ".pramignore")
         if os.path.exists(ignore_file):
             with open(ignore_file) as f:
                 for line in f.readlines():

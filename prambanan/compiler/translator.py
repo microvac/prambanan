@@ -381,7 +381,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
         first = True
         for arg in args.args:
             if first:
-                if strip_first and isinstance(arg, nodes.Name):
+                if strip_first and isinstance(arg, nodes.AssName):
                     strip_first = False
                     continue
                 first = False

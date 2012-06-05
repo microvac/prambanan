@@ -12,6 +12,7 @@ class MainPrambananLibrary(PrambananLibrary):
         PythonModule(join(pylib_dir, "time.py"), "time"),
         PythonModule(join(pylib_dir, "datetime.py"), "datetime"),
         PythonModule(resource_filename("prambanan", "zpt/__init__.py"), "prambanan.zpt"),
+        JavascriptModule(join(pylib_dir, "pramlib.underscore.js"), "prambanan.jslib.underscore"),
     ]
 
     def get_overridden_types(self):

@@ -1,5 +1,7 @@
 from logilab.astng import nodes
+import logging
 
+logger = logging.getLogger("prambanan")
 available_processors = {}
 
 def processor(name):
@@ -29,7 +31,7 @@ def parse(node, context):
                     result = processors[name].process(node, arg)
                     results[name].append(result)
             else:
-                context.warn("cannot find annotation processor %s" % name)
+                logger.warn("cannot find hint processor '%s' in scope '%s'" % (name,  node.scope().qname()))
 
     return results
 

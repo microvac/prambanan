@@ -55,6 +55,9 @@ class Class6(Class4, Class5):
     def method6(self):
         print "method6"
 
+    def method7(self, a):
+        print "method 7 with arg % s" % a
+
 a = Class1()
 b = Class2()
 c = Class3()
@@ -80,6 +83,7 @@ f.method3()
 f.method4()
 f.method5()
 f.method6()
+f.method7("lalala")
 
 print isinstance(f, Class5)
 

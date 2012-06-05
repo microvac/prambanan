@@ -3,7 +3,7 @@ from logilab.astng.scoped_nodes import Module
 from logilab.astng.utils import ASTWalker
 from logilab.astng import nodes
 from prambanan.compiler.utils import ParseError
-from .annotation import parse
+from .hint import parse
 from scope import Scope
 
 import sys

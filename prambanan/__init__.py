@@ -1,4 +1,3 @@
-from prambanan.jslib import underscore
 from .native import *
 
 def JS(fn):
