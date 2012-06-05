@@ -82,21 +82,11 @@ class Module(object):
         self.modname = modname
 
         if dependencies is None:
-            dependencies = []
-        dependencies = list(dependencies)
-
+            dependencies = set()
         if templates is None:
             templates = {}
-        for type in templates:
-            try:
-                provider = get_provider(type)
-            except KeyError:
-                logger.warn("Cannot find template provider '%s' in module '%s' for templates %s" % (type, modname, templates[type]))
-                continue
 
-            for dependency in provider.template_dependencies():
-                dependencies.append(dependency)
-        self.dependencies = set(dependencies)
+        self.dependencies = dependencies
         self.templates = templates
 
 class JavascriptModule(Module):
