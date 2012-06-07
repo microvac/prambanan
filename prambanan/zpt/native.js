@@ -10,7 +10,8 @@ var convert_str = function(s){
 }
 
 var lookup_attr = function(obj, key){
-    return obj[key];
+    var res = obj[key];
+    return (typeof res == "function") ? _.bind(res, obj) : res;
 }
 
 var el_stack_push = function (tag){

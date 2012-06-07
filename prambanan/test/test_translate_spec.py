@@ -29,13 +29,13 @@ def visit_module(self, mod):
     self.write_variables()
 
     if len(builtins) > 0:
-        self.write("%s = %s.import('__builtin__');" %(builtin_var, self.lib_name))
+        self.write(" %s = %s.import('__builtin__'); " %(builtin_var, self.lib_name))
         for builtin in builtins:
-            self.write("%s = %s.%s;" %(builtin, builtin_var, builtin))
+            self.write("%s = %s.%s; " %(builtin, builtin_var, builtin))
 
     for item in self.util_names.values():
         name, value = item
-        self.write("%s = %s;" %(name, value))
+        self.write("%s = %s; " %(name, value))
 
     self.flush_all_buffer()
     self.curr_scope = None
@@ -87,7 +87,7 @@ def make_tester(target_cls, lines, translate_specs, translate_errors):
             print "\n".join(js)
             print "--translated--"
             print translated
-            self.assertEquals(" ".join(js), translated)
+            self.assertEquals(" ".join(js).strip(), translated.strip())
         for start, end in translate_errors:
             spec_lines = lines[start+1:end]
             py = []

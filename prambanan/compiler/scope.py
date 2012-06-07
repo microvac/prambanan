@@ -12,6 +12,7 @@ class Scope(object):
         "bool", "int", "str", "float", "basestring", "unicode",
         "min", "max", "abs", "round",
         "all", "any", "reversed", "sorted", "len", "set", "dict", "list",
+        "getattr", "setattr", "hasattr",
         "filter", "map", "reduce",
         "callable", "super", "type", "tuple", "__import__", "isinstance", "issubclass",
         "range", "xrange", "iter", "enumerate",

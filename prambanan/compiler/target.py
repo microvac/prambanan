@@ -50,13 +50,47 @@ class JSDefaultTranslator(BaseTranslator):
         """
         from module import itema, itemb ->
             module1 = __import__('module'); itema = module1.itema; itemb = module.itemb;
+
+        @translate-spec
+            from module import itema, itemb
+        ->
+            var __builtin__, __import__, _m_module, itema, itemb;
+            __builtin__ = prambanan.import('__builtin__');
+            __import__ = __builtin__.__import__;
+            _m_module = __import__('module'); itema = _m_module.itema;  itemb = _m_module.itemb;
+
+        @translate-spec
+            from module import itema
+        ->
+            var __builtin__, __import__, _m_module, itema;
+            __builtin__ = prambanan.import('__builtin__');
+            __import__ = __builtin__.__import__;
+            _m_module = __import__('module'); itema = _m_module.itema;
+
+        @translate-spec
+            from module.submodule import itema
+        ->
+            var __builtin__, __import__, _m_module, itema;
+            __builtin__ = prambanan.import('__builtin__');
+            __import__ = __builtin__.__import__;
+            _m_module = __import__('module').submodule; itema = _m_module.itema;
+
+        @translate-spec
+            from module.submodule.submodule2 import itema
+        ->
+            var __builtin__, __import__, _m_module, itema;
+            __builtin__ = prambanan.import('__builtin__');
+            __import__ = __builtin__.__import__;
+            _m_module = __import__('module').submodule.submodule2; itema = _m_module.itema;
         """
         module = i.modname
-        if i.level == 1:
-            if module is None:
+        level = i.level
+        while level > 0:
+            if module == "":
                 module = self.modname
             else:
                 module = self.modname+"."+module
+            level -= 1
         for name,asname in i.names:
             if name == "*":
                 if module in [self.modname+".native", self.modname+"_native"]:
@@ -64,6 +98,9 @@ class JSDefaultTranslator(BaseTranslator):
                     for l_name, locals in m.locals.items():
                         for l in locals:
                             if isinstance(l, nodes.Function) or isinstance(l, nodes.AssName) or isinstance(l, nodes.Class):
+                                #todo hack
+                                if self.modname == "prambanan"  and l_name in ["document", "window"]:
+                                    continue
                                 if not l_name.startswith("__") and l_name not in self.public_identifiers:
                                     self.public_identifiers.append(l_name)
                     if self.native is not None:
@@ -75,28 +112,61 @@ class JSDefaultTranslator(BaseTranslator):
                     self.raise_error("import * except native is not supported", i)
         modulevarname = module if "." not in module else module[0:module.find(".")]
         modulevarname = self.curr_scope.generate_variable("_m_"+modulevarname)
-        self.write("%s = __import__('%s'); " % (modulevarname, module))
+        if "." in module:
+            splitted = module.split(".", 1)
+            self.write("%s = __import__('%s').%s; " % (modulevarname, splitted[0], splitted[1]))
+        else:
+            self.write("%s = __import__('%s'); " % (modulevarname, module))
         for name,asname in i.names:
             varname = asname if asname else name
             self.write("%s = %s.%s;  " % (varname, modulevarname, name))
 
     def visit_import(self, i):
         """
-        import module -> module = __import__(module)
-        import namespace.module -> namespace = __import__(namespace)
-        import namespace.module as alias -> alias = __import__(namespace.module)
+        @translate-spec
+            import module
+        ->
+            var __builtin__, __import__, module;
+            __builtin__ = prambanan.import('__builtin__');
+            __import__ = __builtin__.__import__;
+            module = __import__('module');
+
+        @translate-spec
+            import module.submodule
+        ->
+            var __builtin__, __import__, module;
+            __builtin__ = prambanan.import('__builtin__');
+            __import__ = __builtin__.__import__;
+            module = __import__('module');
+
+        @translate-spec
+            import module.submodule as alias
+        ->
+            var __builtin__, __import__, alias;
+            __builtin__ = prambanan.import('__builtin__');
+            __import__ = __builtin__.__import__;
+            alias = __import__('module').submodule;
         """
         first = True
         for name, asname in i.names:
             importname = name
+            importattr = None
             varname = name
             if asname:
                 varname = asname
+                if "." in importname:
+                    splitted = importname.split(".", 1)
+                    importname = splitted[0]
+                    importattr = splitted[1]
             else:
                 if "." in importname:
                     importname = importname[0:importname.find(".")]
                     varname = importname
-            self.write("%s = __import__('%s');" % (varname, importname))
+            if importattr is None:
+                self.write("%s = __import__('%s');" % (varname, importname))
+            else:
+                self.write("%s = __import__('%s').%s;" % (varname, importname, importattr))
+
 
     def visit_callfunc(self, c):
         """
@@ -143,7 +213,6 @@ class JSDefaultTranslator(BaseTranslator):
         self.write(")")
 
     def visit_assname(self, n):
-
         if n.name in utils.RESERVED_WORDS:
             if not n.name in self.translated_names:
                 self.translated_names[n.name] = self.mod_scope.generate_variable("__keyword_"+n.name)
@@ -155,16 +224,6 @@ class JSDefaultTranslator(BaseTranslator):
         self.write("delete %s" % n.name)
 
     def visit_name(self, n):
-        """
-        Translate an identifier. If the context is a method, substitute `self`
-        with `this`.
-
-        Some special keywords:
-        True -> true
-        False -> false
-        None -> null
-
-        """
         self.curr_scope.check_builtin_usage(n.name)
         self.visit_assname(n)
 
@@ -268,6 +327,17 @@ class JSDefaultTranslator(BaseTranslator):
         """
         Translate a dictionary expression.
 
+        @translate-spec
+            {'kutumbaba': 3}
+        ->
+            {kutumbaba: 3};
+
+        @translate-spec
+            {'0kutumbaba': 3}
+        ->
+            {"0kutumbaba": 3};
+
+
         """
         with self.Executor() as items:
             first = True
@@ -343,12 +413,25 @@ class JSDefaultTranslator(BaseTranslator):
 
     def visit_assign(self, a):
         """
-        Translate an assignment.
-        if target is tuple, became self executable function:
-            (a, b) = c
-        if value is tuple make array:
-            c = (a, b)
-                => c = [a, b]
+        @translate-spec
+            a, b = c
+        ->
+            var a, b;(function(_source){a = _source[0]; b = _source[1]; })(c);
+
+        @translate-spec
+            c = a,b
+        ->
+            var c;c = [a,b];
+
+        @translate-spec
+           a = b = c
+        ->
+           var a, b;a = b = c;
+
+        @translate-error
+            d = a,b = x
+
+
 
         """
         is_target_tuple_exists = False
@@ -390,6 +473,17 @@ class JSDefaultTranslator(BaseTranslator):
     def visit_augassign(self, a):
         """
         Translate an assignment operator.
+
+        @tranlate-spec:
+            a += 1
+        ->
+            a++;
+
+        @translate-spec
+            a += b
+        ->
+            a += b;
+
 
         """
         self.walk(a.target)
@@ -671,7 +765,10 @@ class JSDefaultTranslator(BaseTranslator):
         @translate-spec
             raise Exception()
         ->
-            var Exception, __builtin__;__builtin__ = prambanan.import('__builtin__');Exception = __builtin__.Exception;prambanan.helpers.throw(new Exception(), 'source.py', 1);
+            var Exception, __builtin__;
+            __builtin__ = prambanan.import('__builtin__');
+            Exception = __builtin__.Exception;
+            prambanan.helpers.throw(new Exception(), 'source.py', 1);
 
         """
         exc = self.exe_node(r.exc)
@@ -685,11 +782,13 @@ class JSDefaultTranslator(BaseTranslator):
 
     def visit_print(self, p):
         """
-        Translate print "aa" to print("aa")
         @translate-spec
             print "str"
         ->
-            var __builtin__, print;__builtin__ = prambanan.import('__builtin__');print = __builtin__.print;print("str");
+            var __builtin__, print;
+            __builtin__ = prambanan.import('__builtin__');
+            print = __builtin__.print;
+            print("str");
 
         """
         self.write("print(%s)" % self.exe_first_differs(p.values, rest_text=","))
@@ -699,10 +798,26 @@ class JSDefaultTranslator(BaseTranslator):
 
     def visit_const(self, t):
         """
+
         @translate-spec
             "str".c()
         ->
             "str".c();
+
+        @translate-spec
+            True
+        ->
+            true;
+
+        @translate-spec
+            False
+        ->
+            false;
+
+        @translate-spec
+            None
+        ->
+            null;
 
 
         """

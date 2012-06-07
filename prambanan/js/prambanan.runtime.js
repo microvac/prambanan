@@ -4,7 +4,7 @@
     var helpers = prambanan.helpers = {};
     function Module(){};
     var builtins = new Module();
-    var slice = Array.prototype.slice;
+    var arraySlice = Array.prototype.slice;
     prambanan.templates = {}
     /*
      Module import and exports
@@ -219,6 +219,8 @@
             return creator(ctor, bases, instance_attrs, static_attrs);
         },
         isinstance : function (obj, cls){
+            if(cls.__jstype__)
+                return obj instanceof cls.__jstype__;
             if (obj instanceof cls)
                 return true;
             if (!obj.constructor)
@@ -235,7 +237,7 @@
             return new KwArgs(items);
         },
         init_args: function(args){
-            return slice.call(args,0);
+            return arraySlice.call(args,0);
         },
         get_arg : function(index, name, args, dft){
             var arg;
@@ -255,7 +257,7 @@
             var result = [];
             var start = index;
             var end = args[args.length - 1] instanceof KwArgs ? args.length - 1 : args.length;
-            return slice.call(args, start, end);
+            return arraySlice.call(args, start, end);
         },
         get_kwargs:function(args){
             var arg  = args[args.length - 1];
@@ -284,11 +286,54 @@
         },
         basestring: String,
         unicode: String,
+        dict: function(o){
+            if (o instanceof KwArgs)
+                return _.extend({}, o.items);
+            return _.extend({}, o);
+        },
+        list: function(o){
+            if (_.isArray(o))
+                return o;
+            throw new Error("not supported");
+        },
+        tuple: function(o){
+            throw new Error("not supported");
+        }
+    });
 
+
+    var builtin_types = {
+        bool: Boolean,
+        int: Number,
+        float: Number,
+        str: String,
+        basestring: String,
+        unicode: String,
+        dict: Object,
+        list: Array,
+        tuple: Array
+    };
+
+    for(var typ in builtin_types){
+        builtins[typ].__jstype__ = builtin_types[typ];
+    }
+
+
+    _.extend(builtins, {
         max: Math.max,
         min: Math.min,
         abs: Math.abs,
         round: Math.round,
+
+        getattr: function(obj, name){
+            return obj[name];
+        },
+        hasattr: function(obj, name){
+            return _.has(obj, name);
+        },
+        setattr: function(obj, name, value){
+            obj[name] = value;
+        },
 
         all: function(l){
             return _.all(l, function(c){return c === true; })
@@ -299,8 +344,8 @@
         len: function(obj){
             return _.isArray(obj) || _.isString(obj) ? obj.length : _.keys(obj).length;
         },
-        reverse: function (a) {
-            return a.reverse();
+        reversed: function (a) {
+            return a.slice(0).reverse();
         },
         sorted: function(l, key){
             key = helpers.get_arg(1, "key", arguments, function(i){return i;});
@@ -369,11 +414,12 @@
                 }
             }
             result.__mixins__ = mixins;
+            result.prototype.__class__ = result.prototype.constructor;
 
             return result;
         },
         __import__: function(ns){
-            return prambanan.import(ns);
+            return prambanan.import(ns.split(".")[0]);
         },
         super: function(cls, self){
         },
@@ -389,7 +435,6 @@
         },
         None: null
     });
-
 
     function t_object(){this.__init__.apply(this, arguments)}
     var object = builtins.object = t_object;

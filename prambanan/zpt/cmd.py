@@ -5,6 +5,7 @@ import sys
 from logilab.astng import nodes
 import os
 import pkg_resources
+from ..jsbeautifier import beautify
 from prambanan.compiler import translate
 from prambanan.compiler.manager import PrambananManager
 from prambanan.zpt.compiler.ptparser import PTParser
@@ -147,7 +148,11 @@ def generate(translate_args, output_manager, manager, configs):
 
         output_manager.start(out_file)
         parser = PTParser(template_file)
-        translate_code(translate_args, manager, output_manager.out, parser.code, package, path)
+
+        output = StringIO() if translate_args.beautify else output_manager.out
+        translate_code(translate_args, manager, output, parser.code, package, path)
+        if translate_args.beautify:
+            output_manager.out.write(beautify(output.getvalue()))
 
         output_manager.stop()
         manager.mark_file_processed(template_file)
