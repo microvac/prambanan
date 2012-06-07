@@ -1,3 +1,5 @@
+import inspect
+
 class Chain(object):
     def __init__(self, val):
         self.val = val
@@ -14,6 +16,12 @@ class Chain(object):
 
 def chain(obj):
     return Chain(obj)
+
+def keys(obj):
+    return obj.keys()
+
+def isFunction(obj):
+    return inspect.isfunction(obj) or inspect.ismethod(obj)
 
 def find(list, it):
     for o in list:
@@ -35,6 +43,7 @@ def each(obj, it, context = None):
 
 def map(list, it, context=None):
     return map(it, list)
+
 
 def filter(list, it, context=None):
     return filter(it, list)

@@ -180,15 +180,17 @@ class JSDefaultTranslator(BaseTranslator):
         name = None
         call_type = None
         method_written = False
+
+        if inference.infer_qname(c.func) == "prambanan.JS":
+            if len(c.args) != 1:
+                raise ParseError("native js only accept one argument", c.lineno, c.col_offset)
+            if not isinstance(c.args[0], nodes.Const) and not isinstance(c.args[0].value, str):
+                raise ParseError("native js only accept string",c.lineno, c.col_offset)
+            self.write(re.sub(r'(?:@{{[!]?)([^}}]*)(?:}})', r"\1",c.args[0].value))
+            return
+
         if isinstance(c.func, nodes.Name):
             call_type = "name"
-            if inference.infer_qname(c.func) == "prambanan.JS":
-                if len(c.args) != 1:
-                    raise ParseError("native js only accept one argument", c.lineno, c.col_offset)
-                if not isinstance(c.args[0], nodes.Const) and not isinstance(c.args[0].value, str):
-                    raise ParseError("native js only accept string",c.lineno, c.col_offset)
-                self.write(re.sub(r'(?:@{{[!]?)([^}}]*)(?:}})', r"\1",c.args[0].value))
-                return
         elif isinstance(c.func, nodes.Getattr):
             call_type = "getattr"
             if cls is not None and isinstance(c.func.expr, nodes.CallFunc) and isinstance(c.func.expr.func, nodes.Name) :
