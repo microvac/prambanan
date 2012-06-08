@@ -878,9 +878,8 @@ class Compiler(object):
         for stmt in self.visit(node.content):
             yield stmt
 
-        if node.end is not None:
-            for stmt in self.visit(node.end):
-                yield stmt
+        for stmt in template("stack.o()"):
+            yield stmt
 
         self._aliases.pop()
 
@@ -1182,9 +1181,6 @@ class Compiler(object):
             for attribute in node.attributes:
                 for stmt in self.visit(attribute):
                     yield stmt
-
-    def visit_End(self, node):
-        return template("stack.o()")
 
     def visit_Attribute(self, node):
         f = node.space + "%s," + node.quote + "%s" + node.quote

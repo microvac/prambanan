@@ -157,6 +157,19 @@ def generate(translate_args, output_manager, manager, configs):
         output_manager.stop()
         manager.mark_file_processed(template_file)
 
+def template_changed(output_manager, manager, configs):
+    for package, path in configs:
+        template_file = pkg_resources.resource_filename(package, path)
+        name,ext = os.path.splitext(path)
+        preferred_name = "zpt.%s.%s" % (package, name.replace("/", "."))
+
+        output_manager.add(template_file, preferred_name)
+        if not manager.is_file_changed(template_file) and output_manager.is_output_exists(template_file):
+            continue
+        return True
+    return False
+
+
 
 def find_all_templates(dir):
     for dirname, dirnames, filenames in os.walk(dir):

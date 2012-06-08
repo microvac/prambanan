@@ -238,6 +238,36 @@ def generate_modules(translate_args, output_manager, manager, modules):
             if native_file is not None:
                 manager.mark_file_processed(native_file)
 
+def modules_changed(output_manager, manager, modules):
+    patch_astng_manager(manager)
+
+    for module in  modules:
+        for type, file, modname in module.files():
+            native_file = None
+            if type == "js":
+                preferred_name, ext = os.path.splitext(os.path.basename(file))
+            elif type == "py":
+                preferred_name = modname
+                base_name = os.path.basename(file)
+                dir_name = os.path.dirname(os.path.abspath(file))
+                name, ext = os.path.splitext(base_name)
+                if base_name == "__init__.py":
+                    native_file = os.path.join(dir_name, "native.js")
+                else:
+                    native_file = os.path.join(dir_name, name+"_native.js")
+                if not os.path.isfile(native_file):
+                    native_file = None
+            else:
+                raise ValueError("type %s is not supported for file %s" % (type % file))
+
+            output_manager.add(file, preferred_name)
+            if output_manager.is_output_exists(file):
+                if (not manager.is_file_changed(file)) and\
+                   (native_file is None or (not manager.is_file_changed(native_file))):
+                    continue
+            return True
+    return False
+
 def generate_runtime(translate_args, output_manager, manager):
     generate_modules(translate_args, output_manager, manager, RUNTIME_MODULES)
 
