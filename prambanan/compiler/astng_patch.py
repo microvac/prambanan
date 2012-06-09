@@ -21,7 +21,7 @@ class Instance(bases.Instance):
             for inferred in bases._infer_stmts(self._wrap_attr(get_attr, context), context,frame=self):
                 yield inferred
             found = True
-        except NotFoundError:
+        except (NotFoundError, InferenceError):
             pass
 
         try:
@@ -30,7 +30,7 @@ class Instance(bases.Instance):
             for inferred in  self._wrap_attr(self._proxied.igetattr(name, context),context):
                 yield inferred
             found = True
-        except NotFoundError:
+        except (NotFoundError, InferenceError):
             pass
 
         if not found:
@@ -90,3 +90,21 @@ def infer_ifexp(self, context=None):
     for inferred in self.orelse.infer(context):
         yield inferred
 nodes.IfExp.infer = path_wrapper(infer_ifexp)
+
+def for_assigned_stmts(self, node, context=None, asspath=None):
+    if asspath is None:
+        for lst in self.iter.infer(context):
+            if isinstance(lst, (nodes.Tuple, nodes.List)):
+                if hasattr(lst, "infer_item"):
+                    for item in lst.infer_item(None, context):
+                        yield item
+                else:
+                    for item in lst.elts:
+                        yield item
+    else:
+        for infered in protocols._resolve_looppart(self.iter.infer(context),
+            asspath, context):
+            yield infered
+
+nodes.For.assigned_stmts = bases.raise_if_nothing_infered(for_assigned_stmts)
+

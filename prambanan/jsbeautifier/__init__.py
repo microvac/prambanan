@@ -750,9 +750,13 @@ class Beautifier:
             self.append(token_text)
 
     def handle_start_object(self, token_text):
-        self.is_obj = True
-        self.set_mode('OBJECT')
-        self.append(token_text)
+        if self.last_word in ["else", "if", "try"]:
+            self.handle_start_block(token_text)
+            self.append_newline()
+        else:
+            self.is_obj = True
+            self.set_mode('OBJECT')
+            self.append(token_text)
 
 
     def handle_end_block(self, token_text):
