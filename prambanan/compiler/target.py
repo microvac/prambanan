@@ -119,6 +119,10 @@ class JSDefaultTranslator(BaseTranslator):
             self.write("%s = __import__('%s'); " % (modulevarname, module))
         for name,asname in i.names:
             varname = asname if asname else name
+            if varname in utils.RESERVED_WORDS:
+                if not varname in self.translated_names:
+                    self.translated_names[varname] = self.mod_scope.generate_variable("__keyword_"+varname)
+                varname = self.translated_names[varname]
             self.write("%s = %s.%s;  " % (varname, modulevarname, name))
 
     def visit_import(self, i):

@@ -324,6 +324,12 @@
         setattr: function(obj, name, value){
             obj[name] = value;
         },
+        dir: function(obj){
+            results = [];
+            for (var key in obj)
+                results.push(key);
+            return results;
+        },
 
         /*
         Array functions, delegate to underscore
@@ -385,6 +391,8 @@
             throw new Error("super is not implemented, use super in helpers instead");
         },
         isinstance : function (obj, cls){
+            if (obj === null)
+                return false;
             if(cls.__jstype__)
                 return obj instanceof cls.__jstype__;
             if (obj instanceof cls)
@@ -724,6 +732,9 @@
             endswith: function (s) {
                 return this.slice(this.length-s.length) == s;
             },
+            lower: String.prototype.toLowerCase,
+            upper: String.prototype.toUpperCase,
+            title: String.prototype.toUpperCase,
             join: function(col){
                 var result = "";
                 for (var i = 0, len = col.length; i < len; i++){
