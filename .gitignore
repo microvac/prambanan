@@ -19,3 +19,4 @@ pip-log.txt
 **/test/template/*
 **/test/result/*
 **/test/output/gen/*
+**/test/zpt/*

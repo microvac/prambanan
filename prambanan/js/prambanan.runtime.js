@@ -339,8 +339,12 @@
             if(o instanceof KwArgs){
                 return _.keys(o.items);
             }
-            if(_.isObject(o))
+            if(_.isObject(o)){
+                if (o.__iter__){
+                    return o.__iter__();
+                }
                 return _.keys(o)
+            }
             return o;
         },
 

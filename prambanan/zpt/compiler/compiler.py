@@ -53,11 +53,12 @@ from chameleon.utils import ast
 from chameleon.utils import safe_native
 from chameleon.utils import builtins
 from chameleon.utils import decode_htmlentities
-from prambanan.zpt import getitem, deleteitem, convert_str
+from prambanan.zpt import getitem, deleteitem, convert_str,escape, remove_el
 
 convert_str.__module__ = "prambanan.zpt"
 deleteitem.__module__ = "prambanan.zpt"
 getitem.__module__ = "prambanan.zpt"
+remove_el.__module__ = "prambanan.zpt"
 
 
 if version >= (3, 0, 0):
@@ -68,6 +69,7 @@ log = logging.getLogger('chameleon.compiler')
 COMPILER_INTERNALS_OR_DISALLOWED = set([
     "econtext",
     "rcontext",
+    "model_",
     "str",
     "int",
     "float",
@@ -110,6 +112,74 @@ def store_rcontext(name):
     name = native_string(name)
     return subscript(name, load("rcontext"), ast.Store())
 
+def wrap_model_change(node, model, bind_ons, base_on_change, create_last_on_change):
+
+    def get_names(prefix, i):
+        if i != -1:
+            name = "_".join(bind_ons[0:i+1])
+            current = identifier("%s_%s"% (prefix, name), id(node))
+        else:
+            current = model
+
+        if i > 0:
+            name = "_".join(bind_ons[0:i])
+            next = identifier("%s_%s" % (prefix, name), id(node))
+        elif i == 0:
+            next = model
+        else:
+            next = None
+        return current, next
+    def glbl(name):
+        return ast.Global([ast.Name(id=name, ctx=ast.Load())])
+
+    body = []
+    body += base_on_change
+    current_model, next_model = get_names("m", len(bind_ons) -1)
+    body += template("MODEL=None", MODEL=current_model)
+
+    on_change_name = identifier("on_change_%s" % ("_".join(bind_ons[0:len(bind_ons)])), id(node))
+
+    last_on_change=create_last_on_change(current_model, next_model, bind_ons[-1])
+    last_on_change = [glbl(current_model)] +last_on_change
+
+
+    on_change_func = [ast.FunctionDef(
+        name=on_change_name, args=ast.arguments(
+            args=[],
+            defaults=(),
+        ),
+        body=last_on_change
+        )
+    ]
+    body+= on_change_func
+
+    for i in range(len(bind_ons) - 2, -1, -1):
+        bind_on = bind_ons[i]
+        current_model, next_model = get_names("m", i)
+        body += template("MODEL=None", MODEL=current_model)
+
+        func_body = []
+        func_body += [glbl(current_model)]
+        func_body += emit_model_change(current_model, next_model, ast.Str(s="change:%s"%bind_ons[i-1]), ast.Str(s=bind_on), on_change_name)
+
+        on_change_name = identifier("on_change_%s" % "_".join(bind_ons[0:i+1]), id(node))
+
+        on_change_func = [ast.FunctionDef(
+            name=on_change_name, args=ast.arguments(
+                args=[],
+                defaults=(),
+            ),
+            body=func_body
+            )
+        ]
+        body += on_change_func
+
+    body += template("MODEL.on(CHANGE_NAME, ON_CHANGE)", MODEL = model, CHANGE_NAME=ast.Str("change:%s"%bind_ons[0]), ON_CHANGE=on_change_name)
+    body += template("ON_CHANGE()", ON_CHANGE=on_change_name)
+
+
+    return body
+
 
 def set_error(token, exception):
     try:
@@ -138,16 +208,26 @@ def try_except_wrap(stmts, token):
     for stmt in stmts:
         yield stmt
 
+@template
+def emit_model_change(current_model, next_model, event_name, bind_on, on_change):
+    if current_model:
+        current_model.off(event_name, on_change)
+    if next_model:
+        current_model = next_model.get(bind_on)
+    if current_model:
+        current_model.on(event_name, on_change)
+    on_change()
+
 
 @template
-def emit_node(node):  # pragma: no cover
-    stack.t(node)
+def emit_node(node, STACK=None):  # pragma: no cover
+    STACK.t(node)
 
 
 #ejos
 @template
-def emit_node_if_non_trivial(node):  # pragma: no cover
-    stack.t(node)
+def emit_node_if_non_trivial(node, STACK=None):  # pragma: no cover
+    STACK.t(node)
 
 
 @template
@@ -171,34 +251,24 @@ def emit_convert(
     elif target is default_marker:
         target = default
     else:
-        __tt = type(target)
-
-        if __tt is int or __tt is float or __tt is long:
-            target = str(target)
-        elif __tt is encoded:
-            target = decode(target)
-        elif __tt is not str:
-            try:
-                target = target.__html__
-            except AttributeError:
-                __converted = convert(target)
-                target = str(target) if target is __converted else __converted
-            else:
-                target = target()
+        target = str(target)
 
 
 @template
 def emit_translate(target, msgid, default=None):  # pragma: no cover
     target = translate(msgid, default=default, domain=__i18n_domain)
 
+@template
+def emit_convert_structure(target, STACK=None):
+    STACK.u(target)
+    STACK.o()
 
-#ejos
 @template
 def emit_convert_and_escape(
     target, quote=None, quote_entity=None, str=unicode_string, long=long,
     type=type, encoded=byte_string,
     default_marker=None, default=None):  # pragma: no cover
-    target = __escape(target)
+    target = escape(target)
 
 
 class Interpolator(object):
@@ -602,10 +672,11 @@ class NameTransform(object):
 
     """
 
-    def __init__(self, builtins, aliases, internals):
+    def __init__(self, builtins, aliases, internals, defined_models):
         self.builtins = builtins
         self.aliases = aliases
         self.internals = internals
+        self.defined_models = defined_models
 
     def __call__(self, node):
         name = node.id
@@ -614,6 +685,16 @@ class NameTransform(object):
         # internal and can be assumed to be locally defined. This
         # policy really should be part of the template program, not
         # defined here in the compiler.
+
+        if isinstance(node.ctx, ast.Load):
+            if name.startswith("__model_"):
+                name = node.id[8:]
+                if not name in self.defined_models:
+                    raise TranslationError(
+                        "Cannot find model.", name)
+                node.id = self.defined_models[name]
+                return node
+
         if name.startswith('__') or name in self.internals:
             return node
 
@@ -817,6 +898,8 @@ class Compiler(object):
         self._aliases = [{}]
         self._macros = []
         self._current_slot = []
+        self._defined_models = {}
+        self._current_stack = None
 
         internals = COMPILER_INTERNALS_OR_DISALLOWED | \
                     set(self.defaults)
@@ -825,6 +908,7 @@ class Compiler(object):
             self.global_builtins | set(builtins),
             ListDictProxy(self._aliases),
             internals,
+            self._defined_models,
             )
 
         self._visitor = visitor = NameLookupRewriteVisitor(transform)
@@ -869,6 +953,175 @@ class Compiler(object):
             for stmt in self.visit(item):
                 yield stmt
 
+    def visit_BindChange(self, node):
+        body = []
+
+        body.append(Comment("start model-binding"))
+
+        new_stack = identifier("stack", id(node))
+        old_stack = self._current_stack
+        body += template("CAPTURED_STACK = STACK.capture()", CAPTURED_STACK=new_stack, STACK=old_stack)
+
+        self._current_stack = new_stack
+        self._aliases.append(self._aliases[-1].copy())
+
+        inner = self.visit(node.node)
+
+        self._aliases.pop()
+        self._current_stack = old_stack
+
+        on_change_name = identifier("on_change", id(node))
+        on_change_func = [ast.FunctionDef(
+            name=on_change_name, args=ast.arguments(
+                args=[],
+                defaults=(),
+            ),
+            body=inner
+        )]
+        if node.model_name not in self._defined_models:
+            raise TranslationError(
+                "Cannot find bind model on current context.", node.model_name)
+
+        def create_last_on_change(model, next_model, attr):
+            result = []
+
+            sub = []
+            if len(node.bind_attrs):
+                for attr in node.bind_attrs:
+                    sub += template("MODEL.off('change:%s', ON_CHANGE)" % attr, ON_CHANGE=on_change_name, MODEL=model)
+            else:
+                sub += template("MODEL.off('change', ON_CHANGE)", ON_CHANGE=on_change_name, MODEL=model)
+            result += [ast.If(test=load(model), body=sub)]
+
+            sub = []
+            sub += template("MODEL = NEXT_MODEL.get(ATTR)", MODEL = model, NEXT_MODEL=next_model, ATTR=ast.Str(s=attr))
+            result += [ast.If(test=load(next_model), body=sub)]
+
+            sub = []
+            if len(node.bind_attrs):
+                for attr in node.bind_attrs:
+                    sub += template("MODEL.on('change:%s', ON_CHANGE)" % attr, ON_CHANGE=on_change_name, MODEL=model)
+            else:
+                sub += template("MODEL.on('change', ON_CHANGE)", ON_CHANGE=on_change_name, MODEL=model)
+            result += [ast.If(test=load(model), body=sub)]
+
+            return result
+
+
+        if node.bind_ons:
+            body += wrap_model_change(node, self._defined_models[node.model_name], node.bind_ons, on_change_func, create_last_on_change)
+        else:
+            body += on_change_func
+            model = self._defined_models[node.model_name]
+            if len(node.bind_attrs):
+                for attr in node.bind_attrs:
+                    body += template("MODEL.on('change:%s', ON_CHANGE)" % attr, ON_CHANGE=on_change_name, MODEL=model)
+            else:
+                body += template("MODEL.on('change', ON_CHANGE)", ON_CHANGE=on_change_name, MODEL=model)
+                body += template("ON_CHANGE()", ON_CHANGE=on_change_name)
+
+
+        body.append(Comment("end model-binding"))
+        return body
+
+    def visit_BindRepeat(self, node):
+        body = []
+
+        body.append(Comment("start model-repeat-binding"))
+
+        new_stack = identifier("stack", id(node))
+        old_stack = self._current_stack
+        body += template("CAPTURED_STACK = STACK.capture_for_repeat()", CAPTURED_STACK=new_stack, STACK=old_stack)
+
+        el_map = identifier("el_map", id(node))
+        body += template("EL_MAP = {}", EL_MAP=el_map)
+
+        new_stack = identifier("stack", id(node))
+
+        self._current_stack = new_stack
+        self._aliases.append(self._aliases[-1].copy())
+
+        model_name = identifier("model_%s" % node.alias, id(node))
+        self._defined_models[node.alias] = model_name
+
+        inner_on_add = []
+        inner_on_add += self.visit(node.node)
+        inner_on_add += template("EL_MAP[MODEL.cid] = STACK.repeat_el", EL_MAP=el_map, STACK=self._current_stack, MODEL=model_name)
+
+        on_add_name = identifier("on_add", id(node))
+        on_add_func = [ast.FunctionDef(
+            name=on_add_name, args=ast.arguments(
+                args=[load(model_name)],
+                defaults=(),
+            ),
+            body=inner_on_add
+        )]
+        body += on_add_func
+
+        inner_on_remove = []
+        inner_on_remove += template("REMOVE_EL(EL_MAP[MODEL.cid])", REMOVE_EL=Symbol(remove_el), EL_MAP=el_map, MODEL=model_name)
+        inner_on_remove += template("del EL_MAP[MODEL.cid]", EL_MAP=el_map, MODEL=model_name)
+        on_remove_name = identifier("on_remove", id(node))
+        on_remove_func = [ast.FunctionDef(
+            name=on_remove_name, args=ast.arguments(
+                args=[load(model_name)],
+                defaults=(),
+            ),
+            body=inner_on_remove
+        )]
+        body += on_remove_func
+
+        inner_on_reset = [ast.Global([load(el_map)])]
+        inner_on_reset += [ast.For(
+            target=store("cid"),
+            iter=load(el_map),
+            body = template("REMOVE_EL(EL_MAP[cid])", REMOVE_EL=Symbol(remove_el), EL_MAP=el_map)
+        )]
+        inner_on_reset += template("EL_MAP = {}" , EL_MAP=el_map)
+        inner_on_reset.append(
+            ast.If(
+                test=load("models"),
+                body=[ast.For(
+                    target=store("model"),
+                    iter=load("models"),
+                    body=template("ON_ADD(model)", ON_ADD=on_add_name))
+                ]))
+        on_reset_name = identifier("on_reset", id(node))
+        on_reset_func = [ast.FunctionDef(
+            name=on_reset_name, args=ast.arguments(
+                args=[load("models")],
+                defaults=(),
+            ),
+            body=inner_on_reset
+        )]
+        body += on_reset_func
+
+        collection = "__collection"
+        initializer = self._engine(node.expression, store(collection))
+        initializer += [ast.For(
+            target=store("model"),
+            iter=load(collection),
+            body=template("ON_ADD(model)", ON_ADD=on_add_name)
+        )]
+        initializer += template("COLLECTION.on('add', ON_ADD)", COLLECTION=collection, ON_ADD=on_add_name)
+        initializer += template("COLLECTION.on('remove', ON_REMOVE)", COLLECTION=collection, ON_REMOVE=on_remove_name)
+        initializer += template("COLLECTION.on('reset', ON_RESET)", COLLECTION=collection, ON_RESET=on_reset_name)
+        body += initializer
+
+        self._aliases.pop()
+        self._current_stack = old_stack
+
+        body.append(Comment("end model-repeat-binding"))
+        return body
+
+    def visit_DefineModel(self, node):
+        name = identifier("model_%s" % node.alias, id(node))
+        self._defined_models[node.alias] = name
+        body = self._engine(node.expression, store(name))
+        body += self.visit(node.node)
+        return body
+
+
     def visit_Element(self, node):
         self._aliases.append(self._aliases[-1].copy())
 
@@ -878,7 +1131,7 @@ class Compiler(object):
         for stmt in self.visit(node.content):
             yield stmt
 
-        for stmt in template("stack.o()"):
+        for stmt in template("STACK.o()", STACK=self._current_stack):
             yield stmt
 
         self._aliases.pop()
@@ -891,8 +1144,11 @@ class Compiler(object):
 
         return body
 
-    def visit_MacroProgram(self, node):
+    def visit_BindingProgram(self, node):
         functions = []
+
+        self._current_stack = identifier("stack", id(node))
+        self._defined_models[""] = identifier("model", id(node))
 
         # Visit defined macros
         macros = getattr(node, "macros", ())
@@ -920,18 +1176,9 @@ class Compiler(object):
                 NAME=name, KEY=ast.Str(s="__" + name)
             )
 
-        # Internal set of defined slots
-        self._slots = set()
 
         # Visit macro body
         nodes = itertools.chain(*tuple(map(self.visit, node.body)))
-
-        # Slot resolution
-        for name in self._slots:
-            body += template(
-                "try: NAME = econtext[KEY].pop()\n"
-                "except: NAME = None",
-                KEY=ast.Str(s=name), NAME=store(name))
 
         # Append visited nodes
         body += nodes
@@ -942,7 +1189,8 @@ class Compiler(object):
         function = ast.FunctionDef(
             name=function_name, args=ast.arguments(
                 args=[
-                    param("stack"),
+                    param(self._current_stack),
+                    param(self._defined_models[""]),
                     param("econtext"),
                     param("rcontext"),
                     ],
@@ -954,7 +1202,7 @@ class Compiler(object):
         yield function
 
     def visit_Text(self, node):
-        return emit_node(ast.Str(s=node.value))
+        return emit_node(ast.Str(s=node.value), STACK=self._current_stack)
 
     def visit_Domain(self, node):
         backup = "__previous_i18n_domain_%d" % id(node)
@@ -990,19 +1238,18 @@ class Compiler(object):
         if node.translate:
             body += emit_translate(name, name)
 
-        if node.char_escape:
-            body = emit_convert_and_escape(name)
+        if node.is_structure:
+            body += emit_convert_structure(name, STACK=self._current_stack)
         else:
             body += emit_convert(name)
-
-        body += template("stack.t(NAME)", NAME=name)
+            body += template("STACK.t(NAME)", STACK=self._current_stack, NAME=name)
 
         return body
 
     def visit_Interpolation(self, node):
         name = identifier("content")
         res = self._engine(node, name) + \
-               emit_node_if_non_trivial(name)
+               emit_node_if_non_trivial(name, STACK=self._current_stack)
         return res
 
     def visit_Alias(self, node):
@@ -1114,7 +1361,7 @@ class Compiler(object):
 
         # Visit body to generate the message body
         code = self.visit(node.node)
-        swap(ast.Suite(body=code), load(append), "stack.a")
+        swap(ast.Suite(body=code), load(append), load(ast.Attribute(self._current_stack, "a")))
         body += code
 
         # Reduce white space and assign as message id
@@ -1153,9 +1400,9 @@ class Compiler(object):
 
         # emit the translation expression
         body += template(
-            "stack.t(translate("
+            "STACK.t(translate("
             "msgid, mapping=mapping, default=default, domain=__i18n_domain))",
-            msgid=msgid, default=default, mapping=mapping
+            stack=self._current_stack,msgid=msgid, default=default, mapping=mapping
             )
 
         # pop away translation block reference
@@ -1174,7 +1421,13 @@ class Compiler(object):
             " --------------------------------------------------------" % (
                 node.prefix, node.name, line, column))
 
-        for stmt in template("stack.u(N)", N = ast.Str(s=node.name)):
+        if node.repeatable:
+            push = template("STACK.repeat(N)", STACK=self._current_stack, N=ast.Str(s=node.name))
+        elif node.replayable:
+            push = template("STACK.replay(N)", STACK=self._current_stack, N=ast.Str(s=node.name))
+        else:
+            push = template("STACK.u(N)", STACK=self._current_stack, N=ast.Str(s=node.name))
+        for stmt in push:
             yield stmt
 
         if node.attributes:
@@ -1188,12 +1441,13 @@ class Compiler(object):
         # Static attributes are just outputted directly
         if isinstance(node.expression, ast.Str):
             s = f % (node.name, node.expression.s)
-            return template("stack.a(N,S)", N=ast.Str(s=node.name), S=ast.Str(s=node.expression.s))
+            return template("STACK.a(N,S)", STACK=self._current_stack, N=ast.Str(s=node.name), S=ast.Str(s=node.expression.s))
 
         target = identifier("attr", node.name)
         body = self._engine(node.expression, store(target))
         return body + template(
-            "stack.a(NAME,  VALUE)",
+            "STACK.a(NAME,  VALUE)",
+            STACK=self._current_stack,
             NAME=ast.Str(s=node.name),
             VALUE=target,
             )
@@ -1216,35 +1470,6 @@ class Compiler(object):
 
         return body
 
-    def visit_UseInternalMacro(self, node):
-        if node.name is None:
-            render = "render"
-        else:
-            render = "render_%s" % mangle(node.name)
-
-        return template(
-            "f(__stream, econtext.copy(), rcontext, __i18n_domain)",
-            f=render) + \
-            template("econtext.update(rcontext)")
-
-    def visit_DefineSlot(self, node):
-        name = "__slot_%s" % mangle(node.name)
-        body = self.visit(node.node)
-
-        self._slots.add(name)
-
-        orelse = template(
-            "SLOT(__stream, econtext.copy(), rcontext)",
-            SLOT=name)
-        test = ast.Compare(
-            left=load(name),
-            ops=[ast.Is()],
-            comparators=[load("None")]
-            )
-
-        return [
-            ast.If(test=test, body=body or [ast.Pass()], orelse=orelse)
-            ]
 
     def visit_Name(self, node):
         """Translation name."""
@@ -1267,7 +1492,7 @@ class Compiler(object):
 
         # generate code
         code = self.visit(node.node)
-        swap(ast.Suite(body=code), load(append), "stack.a")
+        swap(ast.Suite(body=code), load(append), load(ast.Attribute(self._current_stack,"a")))
         body += code
 
         # output msgid
@@ -1287,60 +1512,6 @@ class Compiler(object):
 
         return stmts
 
-    def visit_UseExternalMacro(self, node):
-        self._macros.append(node.extend)
-
-        callbacks = []
-        for slot in node.slots:
-            key = "__slot_%s" % mangle(slot.name)
-            fun = "__fill_%s" % mangle(slot.name)
-
-            self._current_slot.append(slot.name)
-
-            body = self.visit(slot.node)
-
-            assert self._current_slot.pop() == slot.name
-
-            callbacks.append(
-                ast.FunctionDef(
-                    name=fun,
-                    args=ast.arguments(
-                        args=[
-                            param("__stream"),
-                            param("econtext"),
-                            param("rcontext"),
-                            param("__i18n_domain"),
-                            ],
-                        defaults=[load("__i18n_domain")],
-                        ),
-                    body=body or [ast.Pass()],
-                ))
-
-            key = ast.Str(s=key)
-
-            assignment = template(
-                "_slots = econtext[KEY] = DEQUE((NAME,))",
-                KEY=key, NAME=fun, DEQUE=Symbol(collections.deque),
-                )
-
-            if node.extend:
-                append = template("_slots.appendleft(NAME)", NAME=fun)
-                assignment = template("_slots = econtext[KEY]", KEY=key),
-
-            callbacks.extend(assignment)
-
-        assert self._macros.pop() == node.extend
-
-        assignment = self._engine(node.expression, store("__macro"))
-
-        return (
-            callbacks + \
-            assignment + \
-            template(
-                "__macro.include(__stream, econtext.copy(), " \
-                "rcontext, __i18n_domain)") + \
-            template("econtext.update(rcontext)")
-            )
 
     def visit_Repeat(self, node):
         # Used for loop variable definition and restore
@@ -1381,23 +1552,24 @@ class Compiler(object):
 
         repeat = identifier("__repeat", id(node))
         index = identifier("__index", id(node))
+        iterator = identifier("__iterator", id(node))
         assignment = [ast.Assign(targets=targets, value=load("__item"))]
 
         # Make repeat assignment in outer loop
         names = node.names
         local = node.local
 
-        outer = self._engine(node.expression, store("__iterator"))
+        outer = self._engine(node.expression, store(iterator))
 
         if local:
             outer[:] = list(self._enter_assignment(names)) + outer
 
         outer += template(
-            "REPEAT = econtext['repeat'](key, __iterator)",
-            key=key, INDEX=index, REPEAT=repeat
+            "REPEAT = econtext['repeat'](key, ITERATOR)",
+            key=key, INDEX=index, REPEAT=repeat, ITERATOR=iterator
             )
         outer += template(
-            "INDEX = REPEAT[1]",
+            "INDEX = REPEAT.length",
             INDEX=index, REPEAT=repeat
         )
 
@@ -1409,22 +1581,25 @@ class Compiler(object):
             value=load("None"))
               ]
 
+        inner = template(
+            "REPEAT.__next()", REPEAT=repeat
+        )
         # Compute inner body
-        inner = self.visit(node.node)
+        inner += self.visit(node.node)
 
         # After each iteration, decrease the index
         inner += template("index -= 1", index=index)
 
         # For items up to N - 1, emit repeat whitespace
         inner += template(
-            "if INDEX > 0: stack.t(WHITESPACE)",
+            "if INDEX > 0: STACK.t(WHITESPACE)", STACK=self._current_stack,
             INDEX=index, WHITESPACE=ast.Str(s=node.whitespace)
             )
 
         # Main repeat loop
         outer += [ast.For(
             target=store("__item"),
-            iter=load("__iterator"),
+            iter=load(iterator),
             body=assignment + inner,
             )]
 

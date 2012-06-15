@@ -10,7 +10,7 @@ class LazyPageTemplate(object):
         self.package = package
         self.filename = filename
 
-    def render(self, el, **vars):
+    def render(self, el, model, **vars):
         from prambanan.zpt import PageTemplate
         from prambanan.zpt.compiler.ptparser import PTParser
 
@@ -19,7 +19,7 @@ class LazyPageTemplate(object):
         compiled = compile(pt.code, self.filename, "exec")
         env = {}
         exec(compiled, env)
-        return PageTemplate(env["render"]).render(el, **vars)
+        return PageTemplate(env["render"]).render(el, model, **vars)
 
 class ZPTTemplate(Template):
 

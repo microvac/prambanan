@@ -22,6 +22,8 @@ def lookup_attr(obj, key):
         except KeyError:
             raise exc
 
+def remove_el(el):
+    pass
 
 def el_stack_push(self, tag):
     child = etree.SubElement(self.current, tag)
@@ -39,5 +41,9 @@ def el_stack_text(self, text):
 
 def el_stack_attr(self, name, value):
     self.current.attrib[name] = value
+
+def el_stack_replay(self, tag):
+    pass
+
 
 

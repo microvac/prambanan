@@ -89,6 +89,9 @@ class Module(object):
         self.dependencies = dependencies
         self.templates = templates
 
+    def __str__(self):
+        return "Module: %s" % self.modname
+
 class JavascriptModule(Module):
     def __init__(self, paths, modname, dependencies=None, templates=None):
         if isinstance(paths, str):
@@ -185,7 +188,7 @@ def files_to_modules(files, base_directory):
         name, ext = os.path.splitext(base_name)
         dir_name = os.path.dirname(os.path.abspath(file))
         rel_dir = os.path.dirname(os.path.relpath(file, base_directory))
-        base_modname = ".".join(os.path.split(rel_dir))
+        base_modname = ".".join(os.path.normpath(rel_dir).split(os.path.sep))
         if base_modname.startswith("."):
             base_modname = base_modname[1:]
         if name == "__init__":

@@ -1,20 +1,18 @@
 from functools import partial
-from chameleon.astutil import Builtin, Symbol, ItemLookupOnAttributeErrorVisitor
+from chameleon.astutil import Builtin, ItemLookupOnAttributeErrorVisitor, Symbol, AnnotationAwareVisitor
 from chameleon.codegen import template
 from chameleon.nodes import Module
-from chameleon.parser import ElementParser
-from chameleon.program import ElementProgram
 from chameleon.tales import ExpressionParser
 from chameleon.utils import read_bytes
-from chameleon.zpt.program import MacroProgram
 
 from compiler import Compiler, ExpressionEngine
 
-import chameleon.tales
-import pprint
 import ast
-from chameleon.zpt.template import Macros, PageTemplate
+import re
+from chameleon.zpt.template import  PageTemplate
 from prambanan.zpt import lookup_attr
+from prambanan.zpt.compiler.program import BindingProgram
+from chameleon.tales import PythonExpr
 
 lookup_attr.__module__ = "prambanan.zpt"
 
@@ -29,26 +27,56 @@ def transform_attribute(node):
         mode="eval"
     )
 
-class PythonExpr(chameleon.tales.PythonExpr):
-    transform = ItemLookupOnAttributeErrorVisitor(transform_attribute)
+model_re = re.compile(r"#([\w]*)", re.MULTILINE)
+def replace_model_re(m):
+    model_name = m.groups()[0]
+    result = "__model_" + model_name
+    return result
+
+class AttributeAndCallVisitor(AnnotationAwareVisitor):
+    def __init__(self, transform):
+        self.transform = transform
+
+    def visit_Attribute(self, node):
+        self.generic_visit(node)
+        self.apply_transform(node)
+
+    def visit_Call(self, node):
+        if isinstance(node.func, ast.Attribute):
+            self.generic_visit(node.func)
+
+class PrambananExpr(PythonExpr):
+    """
+    change all
+        @expr -> model.get(expr)
+        @a.b.c to model.get('a').get('b').get('c)
+    before passing to python expr
+    """
+    transform = AttributeAndCallVisitor(transform_attribute)
+
+    def translate(self, expression, target):
+        expression = model_re.sub(replace_model_re, expression)
+        return PythonExpr.translate(self, expression, target)
+
 
 class PTParser(object):
 
     default_encoding = "utf-8"
 
-    def __init__(self, filename):
+    def __init__(self, filename, binds=False):
         source = self.read(filename)
         self.macros = {}
         self.expression_types = PageTemplate.expression_types.copy()
-        self.expression_types["python"] = PythonExpr
-        self.default_expression = PageTemplate.default_expression
+        self.expression_types["prambanan"] = PrambananExpr
+        self.default_expression = "prambanan"
 
         default_marker = Builtin("False")
 
-        program = MacroProgram(
+        program = BindingProgram(
             source, "xml", filename,
             escape=True,
-            default_marker=default_marker
+            default_marker=default_marker,
+            binds=binds,
         )
         module = Module("initialize", program)
         compiler = Compiler(self.engine, module, self._builtins(), strict=False)

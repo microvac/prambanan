@@ -180,7 +180,7 @@ class ScopeGenerator(ASTWalker):
 
     def visit_global(self, g):
         for name in g.names:
-            self.current_scope.global_variables.append(g)
+            self.current_scope.global_variables.append(name)
 
     def visit_while(self, w):
         self.visit_body(w)

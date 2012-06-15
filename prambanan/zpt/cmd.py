@@ -1,3 +1,4 @@
+import prambanan.compiler.astng_patch
 from StringIO import StringIO
 import argparse
 import gettext
@@ -6,6 +7,7 @@ from logilab.astng import nodes
 import os
 import pkg_resources
 from ..jsbeautifier import beautify
+from prambanan.cmd import patch_astng_manager
 from prambanan.compiler import translate
 from prambanan.compiler.manager import PrambananManager
 from prambanan.zpt.compiler.ptparser import PTParser
@@ -31,6 +33,9 @@ def create_translate_parser():
     parser.add_argument("--locale-dir", dest="locale_dir",
         default = None, type=str,
         help="locale directory default = pkg_resource of modname")
+
+    parser.add_argument("--no-beautify", action="store_false", dest="beautify",
+        help="don't beautify result")
 
     parser.add_argument("package", metavar="package", type=str,
         help="python package")
@@ -147,7 +152,7 @@ def generate(translate_args, output_manager, manager, configs):
             continue
 
         output_manager.start(out_file)
-        parser = PTParser(template_file)
+        parser = PTParser(template_file, binds=True)
 
         output = StringIO() if translate_args.beautify else output_manager.out
         translate_code(translate_args, manager, output, parser.code, package, path)
@@ -170,34 +175,42 @@ def template_changed(output_manager, manager, configs):
     return False
 
 
-
-def find_all_templates(dir):
+def find_all_templates(package):
+    dir = pkg_resources.resource_filename(package, "")
     for dirname, dirnames, filenames in os.walk(dir):
         for filename in filenames:
             name, ext = os.path.splitext(filename)
             if ext == ".pt":
                 abspath = os.path.join(dirname, filename)
-                yield (os.path.relpath(abspath, dir), abspath)
+                yield os.path.relpath(abspath, dir), abspath
 
-def get_files(args):
+def get_all(args):
     if len(args.files) == 0:
-        for result in find_all_templates(pkg_resources.resource_filename(args.package, "")):
-            yield result
+        for result in find_all_templates(args.package):
+            yield args.package, result
     else:
         for file in args.files:
-            yield (file, pkg_resources.resource_filename(args.package, file))
+            yield args.package, file, pkg_resources.resource_filename(args.package, file)
 
 
 def main(argv=sys.argv[1:]):
+    compile = False
     parser = create_translate_parser()
     args = parser.parse_args(argv)
-    for name, filename in get_files(args):
-        print "-------------"
-        parser = PTParser(filename)
-        print parser.code
-        translate_code(args, filename, parser.code, "kutumbaba")
-        print "-------------"
+    manager = PrambananManager([])
+    patch_astng_manager(manager)
+    for package, name, filename in get_all(args):
+        parser = PTParser(filename, binds=True)
+        output = StringIO()
+        if compile:
+            translate_code(args, manager, output,  parser.code, package, name)
+            output = beautify(output.getvalue()) if args.beautify else output.getvalue()
+            args.output.write(output)
+        else:
+            args.output.write(parser.code)
+        args.output.close()
     return 0
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]) or 0)
+
