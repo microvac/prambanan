@@ -17,6 +17,7 @@ class LazyPageTemplate(object):
         file = pkg_resources.resource_filename(self.package, self.filename)
         pt = PTParser(file)
         compiled = compile(pt.code, self.filename, "exec")
+        print pt.code
         env = {}
         exec(compiled, env)
         return PageTemplate(env["render"]).render(el, model, **vars)

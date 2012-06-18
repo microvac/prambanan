@@ -57,7 +57,7 @@ print a
 
 def hinted_set(l, v):
     """
-    prambanan:type l list
+    prambanan:type l l(i(object))
     """
     l[c] = v
 hinted_set(a, 10)

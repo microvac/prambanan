@@ -584,7 +584,7 @@ class JSDefaultTranslator(BaseTranslator):
             exported.extend(self.get_identifiers(stmt))
             if isinstance(stmt, nodes.Function):
                 decorators = self.get_special_decorators(stmt)
-                if not "staticmethod" in decorators:
+                if not "staticmethod" in decorators and not "classmethod" in decorators:
                     proto_only.append(stmt.name)
                 else:
                     cls_only.append(stmt.name)

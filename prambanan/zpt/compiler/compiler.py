@@ -81,6 +81,26 @@ COMPILER_INTERNALS_OR_DISALLOWED = set([
     "RuntimeError",
     ])
 
+HTML_VOID_ELEMENTS = set([
+    "area",
+    "base",
+    "br",
+    "col",
+    "command",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "keygen",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+])
+comment_re = re.compile("<!--.*?-->", re.DOTALL)
+
 
 RE_MANGLE = re.compile('[^\w_]')
 RE_NAME = re.compile('^%s$' % NAME)
@@ -1202,7 +1222,9 @@ class Compiler(object):
         yield function
 
     def visit_Text(self, node):
-        return emit_node(ast.Str(s=node.value), STACK=self._current_stack)
+        #remove xml comment
+        text = comment_re.sub("", node.value)
+        return emit_node(ast.Str(s=text), STACK=self._current_stack)
 
     def visit_Domain(self, node):
         backup = "__previous_i18n_domain_%d" % id(node)

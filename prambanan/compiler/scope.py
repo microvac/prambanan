@@ -11,10 +11,12 @@ class Scope(object):
     BUILTINS_FUNC = [
         "bool", "int", "str", "float", "basestring", "unicode",
         "min", "max", "abs", "round",
-        "all", "any", "reversed", "sorted", "len", "set", "dict", "list",
+        "all", "any", "reversed", "sorted", "len",
+        "set", "dict", "list", "tuple",
         "getattr", "setattr", "hasattr", "dir",
         "filter", "map", "reduce",
-        "callable", "super", "type", "tuple", "__import__", "isinstance", "issubclass",
+        "callable", "__import__",
+        "type", "super", "isinstance", "issubclass",
         "range", "xrange", "iter", "enumerate",
         "print",
         "None"

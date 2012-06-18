@@ -87,3 +87,17 @@ f.method7("lalala")
 
 print isinstance(f, Class5)
 
+
+class ClassMethod1(object):
+    l = [1,2,3]
+
+    @classmethod
+    def get_l(cls):
+        return cls.l
+
+class ClassMethod2(ClassMethod1):
+    l = [1,2,3, 4]
+
+print ClassMethod1.get_l()
+print ClassMethod2.get_l()
+

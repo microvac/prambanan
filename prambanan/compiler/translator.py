@@ -231,6 +231,9 @@ class BaseTranslator(BufferedWriter, ASTWalker):
     def is_static_method(self, dec):
         return inference.infer_qname(dec) == "__builtin__.staticmethod"
 
+    def is_class_method(self, dec):
+        return inference.infer_qname(dec) == "__builtin__.classmethod"
+
     def get_special_decorators(self, stmt):
         """
         Return a dictionary of decorators and their parameters.
@@ -244,6 +247,8 @@ class BaseTranslator(BufferedWriter, ASTWalker):
                 if isinstance(stmt, nodes.Function) and stmt.decorators is not None:
                     if self.is_static_method(dec):
                         decorators["staticmethod"] = True
+                    if self.is_class_method(dec):
+                        decorators["classmethod"] = True
         return decorators
 
     def push_context(self, identifier):
@@ -325,7 +330,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
             return
 
         for dec in stmt.decorators.nodes:
-            if self.is_js_noop(dec) or self.is_static_method(dec):
+            if self.is_js_noop(dec) or self.is_static_method(dec) or self.is_class_method(dec):
                 continue
             header = self.exe_node(dec)
             current = "%s(%s)" % (header, current)

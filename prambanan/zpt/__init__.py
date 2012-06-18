@@ -12,6 +12,7 @@ class ElementStack(object):
         self.current = el
         self.stack = []
         self.replay_el = None
+        self.tail = None
 
     u = el_stack_push
     o = el_stack_pop

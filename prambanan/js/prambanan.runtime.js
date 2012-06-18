@@ -386,7 +386,9 @@
             return _.reduce(l, function(memo, num){f(num + memo)}, i);
         },
 
-        /* Inheritance utilites */
+        /* Object Utilites */
+
+
         super: function(cls, self){
             throw new Error("super is not implemented, use super in helpers instead");
         },
