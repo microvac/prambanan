@@ -189,8 +189,8 @@
         iter: function(obj){
             return builtins.iter(obj);
         },
-        super: function(obj, attr){
-            return _.bind((obj.constructor.__super__)[attr], obj)
+        super: function(cls, obj, attr){
+            return _.bind((cls.__super__)[attr], obj)
         },
         class: function(ctor, bases, fn){
             var attrs = fn();
@@ -206,6 +206,9 @@
             return creator(ctor, bases, instance_attrs, static_attrs);
         },
         in: function(item, col){
+            if (!_.isUndefined(col) && col.__contains__){
+                return col.__contains__(item);
+            }
             if (_.isArray(col)){
                 return _.contains(col, item)
             }

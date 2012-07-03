@@ -204,7 +204,7 @@ class JSDefaultTranslator(BaseTranslator):
                         self.raise_error("Only python 2 simple super supported", c)
                     attrname = c.func.attrname
                     self.write("%s(" % self.get_util_var_name("_super", "%s.helpers.super" % self.lib_name))
-                    self.write("this, '%s')" %  attrname)
+                    self.write("%s, this, '%s')" %  (self.exe_node(c.func.expr.args[0]), attrname))
                     method_written = True
 
         if type is None and "type" in self.warnings:

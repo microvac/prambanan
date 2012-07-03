@@ -15,6 +15,7 @@ class Class2(Class1):
 
     def __init__(self):
         print "init 2"
+        super(Class2, self).__init__()
 
     def method2(self):
         print "method2"

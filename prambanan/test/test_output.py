@@ -10,7 +10,7 @@ from prambanan import jsbeautifier
 dir = os.path.dirname(os.path.realpath(__file__))
 src_dir = os.path.join(dir, "output")
 
-@output_tester.directory_tester(src_dir, print_output=True, files=["class"])
+@output_tester.directory_tester(src_dir, print_output=True)
 class TestOutput(unittest.TestCase):
     pass
 
