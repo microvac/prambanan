@@ -399,7 +399,7 @@
             if (obj === null)
                 return false;
             if(cls.__jstype__)
-                return obj instanceof cls.__jstype__;
+                return obj.constructor == cls.__jstype__;
             if (obj instanceof cls)
                 return true;
             if (!obj.constructor)

@@ -1,4 +1,4 @@
-var lib = window.prambanan;
+var lib = this.prambanan;
 
 var is_js= true;
 var items= function(obj){
