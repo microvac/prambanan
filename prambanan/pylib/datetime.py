@@ -1,5 +1,6 @@
 from prambanan import JS
 from time import __c__days, __c__months, strftime, localtime, gmtime, _strptime
+_strftime = strftime
 
 MINYEAR = 1
 MAXYEAR = 1000000
@@ -94,7 +95,7 @@ class date(object):
         return date(year, month, day)
     
     def strftime(self, format):
-        return strftime(format, self.timetuple())
+        return _strftime(format, self.timetuple())
     
     def timetuple(self):
         tm = localtime(int(self._d.getTime() / 1000.0))
@@ -174,7 +175,7 @@ class time(object):
         return time(hour, minute, second, microsecond)
     
     def strftime(self, format):
-        return strftime(format, localtime(int(self._d.getTime() / 1000.0)))
+        return _strftime(format, localtime(int(self._d.getTime() / 1000.0)))
     
     def tzname(self):
         return None

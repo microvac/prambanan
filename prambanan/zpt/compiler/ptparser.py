@@ -44,6 +44,8 @@ class AttributeAndCallVisitor(AnnotationAwareVisitor):
     def visit_Call(self, node):
         if isinstance(node.func, ast.Attribute):
             self.generic_visit(node.func)
+        for arg in node.args:
+            self.visit(arg)
 
 class PrambananExpr(PythonExpr):
     """
