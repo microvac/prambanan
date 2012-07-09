@@ -8,7 +8,7 @@ import os
 import pkg_resources
 from ..jsbeautifier import beautify
 from prambanan.cmd import patch_astng_manager
-from prambanan.compiler import translate
+from prambanan.compiler import translate, ImportFinder
 from prambanan.compiler.manager import PrambananManager
 from prambanan.zpt.compiler.ptparser import PTParser
 
@@ -161,6 +161,12 @@ def generate(translate_args, output_manager, manager, configs):
 
         output_manager.stop()
         manager.mark_file_processed(template_file)
+
+def get_imports(package, path):
+    template_file = pkg_resources.resource_filename(package, path)
+    parser = PTParser(template_file, binds=True)
+    return ImportFinder.string_find_imports(parser.code)
+
 
 def template_changed(output_manager, manager, configs):
     for package, path in configs:

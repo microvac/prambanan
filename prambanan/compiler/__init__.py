@@ -51,6 +51,13 @@ class ImportFinder(ASTWalker):
         finder.walk(tree)
         return set(finder.imports)
 
+    @staticmethod
+    def string_find_imports(string):
+        tree = builder.ASTNGBuilder().string_build(string)
+        finder = ImportFinder("")
+        finder.walk(tree)
+        return set(finder.imports)
+
 class TemplateFinder(ASTWalker):
 
     def __init__(self):
