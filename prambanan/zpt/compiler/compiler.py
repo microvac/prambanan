@@ -1038,7 +1038,7 @@ class Compiler(object):
                     body += template("MODEL.on('change:%s', ON_CHANGE)" % attr, ON_CHANGE=on_change_name, MODEL=model)
             else:
                 body += template("MODEL.on('change', ON_CHANGE)", ON_CHANGE=on_change_name, MODEL=model)
-                body += template("ON_CHANGE()", ON_CHANGE=on_change_name)
+            body += template("ON_CHANGE()", ON_CHANGE=on_change_name)
 
 
         body.append(Comment("end model-binding"))

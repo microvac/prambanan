@@ -212,6 +212,9 @@
             if (_.isArray(col)){
                 return _.contains(col, item)
             }
+            if (_.isString(col)){
+                return col.indexOf(item) != -1
+            }
             return _.has(col, item)
         },
         make_kwargs: function(items){
@@ -740,6 +743,7 @@
             lower: String.prototype.toLowerCase,
             upper: String.prototype.toUpperCase,
             title: String.prototype.toUpperCase,
+            strip: String.prototype.trim,
             join: function(col){
                 var result = "";
                 for (var i = 0, len = col.length; i < len; i++){
