@@ -7,13 +7,15 @@ import pkg_resources
 pylib_dir = resource_filename("prambanan", "pylib/")
 
 class MainPrambananLibrary(PrambananLibrary):
-    modules = [
-        PythonModule(join(pylib_dir, "math.py"), "math"),
-        PythonModule(join(pylib_dir, "time.py"), "time"),
-        PythonModule(join(pylib_dir, "datetime.py"), "datetime"),
-        PythonModule(resource_filename("prambanan", "zpt/__init__.py"), "prambanan.zpt"),
-        JavascriptModule(join(pylib_dir, "pramlib.underscore.js"), "prambanan.jslib.underscore"),
-    ]
+    def __init__(self, *args):
+        super(MainPrambananLibrary, self).__init__(*args)
+        self.modules = [
+            PythonModule(join(pylib_dir, "math.py"), "math", self.import_cache),
+            PythonModule(join(pylib_dir, "time.py"), "time", self.import_cache),
+            PythonModule(join(pylib_dir, "datetime.py"), "datetime", self.import_cache),
+            PythonModule(resource_filename("prambanan", "zpt/__init__.py"), "prambanan.zpt", self.import_cache),
+            JavascriptModule(join(pylib_dir, "pramlib.underscore.js"), "prambanan.jslib.underscore"),
+            ]
 
     def get_overridden_types(self):
         return {}

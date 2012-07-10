@@ -44,7 +44,7 @@ class RepeatItem(object):
         self.length = length
         self.index = None
 
-    def __next(self):
+    def _next(self):
         if self.index is None:
             self.index = 0
         else:
@@ -58,13 +58,21 @@ class RepeatItem(object):
 
 def RepeatDict(d):
 
-    def __call__(key, iterable):
+    def c(key, iterable):
         length = len(iterable)
         iterator = iter(iterable)
-        __call__[key] = RepeatItem(iterator, length)
-        return __call__[key]
+        if prambanan.is_js:
+            c[key] = RepeatItem(iterator, length)
+            return c[key]
+        else:
+            d[key] = RepeatItem(iterator, length)
+            return d[key]
 
-    return __call__
+    if not prambanan.is_js:
+        c.__setitem__ = d.__setitem__
+        c.__getitem__ = d.__getitem__
+
+    return c
 
 class PageTemplate(object):
 

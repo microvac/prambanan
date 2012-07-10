@@ -151,6 +151,7 @@ class BindingProgram(MacroProgram):
             self._maybe_trim(start['suffix']),
             ATTRIBUTES
         )
+        stag = start_tag
 
         end_tag = nodes.End(
             end['name'],
@@ -371,7 +372,7 @@ class BindingProgram(MacroProgram):
             slot = DefineModel(splits[0][1:], splits[1], slot)
 
 
-        start_tag.replayable = False
+        stag.replayable = False
         if self.binds:
             try:
                 bind_clause = ns[(PRAMTAL, "bind-change")]
@@ -394,12 +395,12 @@ class BindingProgram(MacroProgram):
                 if len(bind_splits) > 1:
                     bind_attrs = bind_splits[1].split(";")
 
-                start_tag.replayable = True
+                stag.replayable = True
                 slot = BindChange(bind_model, bind_ons, bind_attrs, slot )
             except KeyError:
                 pass
 
-        start_tag.repeatable = False
+        stag.repeatable = False
         if self.binds:
             try:
                 bind_repeat_clause = ns[(PRAMTAL, "bind-repeat")]
@@ -412,7 +413,7 @@ class BindingProgram(MacroProgram):
                 if not splits[0].startswith("#"):
                     raise LanguageError("need # in alias.", bind_repeat_clause)
                 slot = BindRepeat(splits[0][1:], splits[1], slot)
-                start_tag.repeatable = True
+                stag.repeatable = True
 
 
         return slot

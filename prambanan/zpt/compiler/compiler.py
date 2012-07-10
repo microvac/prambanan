@@ -692,11 +692,12 @@ class NameTransform(object):
 
     """
 
-    def __init__(self, builtins, aliases, internals, defined_models):
+    def __init__(self, builtins, aliases, internals, defined_models, get_current_el):
         self.builtins = builtins
         self.aliases = aliases
         self.internals = internals
         self.defined_models = defined_models
+        self.get_current_el = get_current_el
 
     def __call__(self, node):
         name = node.id
@@ -717,6 +718,9 @@ class NameTransform(object):
 
         if name.startswith('__') or name in self.internals:
             return node
+
+        if name == "el":
+            return self.get_current_el()
 
         if isinstance(node.ctx, ast.Store):
             return store_econtext(name)
@@ -929,6 +933,7 @@ class Compiler(object):
             ListDictProxy(self._aliases),
             internals,
             self._defined_models,
+            self.get_current_el,
             )
 
         self._visitor = visitor = NameLookupRewriteVisitor(transform)
@@ -958,6 +963,9 @@ class Compiler(object):
                 self.lock.release()
 
         self.code = generator.code
+
+    def get_current_el(self):
+        return template("STACK.current", STACK=self._current_stack)[0]
 
     def visit(self, node):
         if node is None:
@@ -1201,6 +1209,7 @@ class Compiler(object):
         nodes = itertools.chain(*tuple(map(self.visit, node.body)))
 
         # Append visited nodes
+        body += template("__i18n_domain = None")
         body += nodes
 
         function_name = "render" if node.name is None else \
@@ -1383,7 +1392,7 @@ class Compiler(object):
 
         # Visit body to generate the message body
         code = self.visit(node.node)
-        swap(ast.Suite(body=code), load(append), load(ast.Attribute(self._current_stack, "a")))
+        swap(ast.Suite(body=code), load(append), "__append")
         body += code
 
         # Reduce white space and assign as message id
@@ -1443,6 +1452,8 @@ class Compiler(object):
             " --------------------------------------------------------" % (
                 node.prefix, node.name, line, column))
 
+        if not hasattr(node, "repeatable"):
+            print "ea"
         if node.repeatable:
             push = template("STACK.repeat(N)", STACK=self._current_stack, N=ast.Str(s=node.name))
         elif node.replayable:
@@ -1514,7 +1525,7 @@ class Compiler(object):
 
         # generate code
         code = self.visit(node.node)
-        swap(ast.Suite(body=code), load(append), load(ast.Attribute(self._current_stack,"a")))
+        swap(ast.Suite(body=code), load(append), "__append")
         body += code
 
         # output msgid
@@ -1604,7 +1615,7 @@ class Compiler(object):
               ]
 
         inner = template(
-            "REPEAT.__next()", REPEAT=repeat
+            "REPEAT._next()", REPEAT=repeat
         )
         # Compute inner body
         inner += self.visit(node.node)

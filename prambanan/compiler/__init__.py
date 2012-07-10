@@ -45,11 +45,23 @@ class ImportFinder(ASTWalker):
                 self.imports.append(importname)
 
     @staticmethod
-    def find_imports(file, modname):
-        tree = builder.ASTNGBuilder().file_build(file)
-        finder = ImportFinder(modname)
-        finder.walk(tree)
-        return set(finder.imports)
+    def find_imports(file, modname, import_cache=None):
+        results = None
+        if import_cache is not None:
+            if not import_cache.is_file_changed(file):
+                results = import_cache.get_imports(file)
+                if results is None:
+                    print "ea"
+
+        if results is None:
+            tree = builder.ASTNGBuilder().file_build(file)
+            finder = ImportFinder(modname)
+            finder.walk(tree)
+            results =  set(finder.imports)
+
+            if import_cache is not None:
+                import_cache.set_imports(file, results)
+        return results
 
     @staticmethod
     def string_find_imports(string):
@@ -78,11 +90,21 @@ class TemplateFinder(ASTWalker):
 
 
     @staticmethod
-    def find_templates(file):
-        tree = builder.ASTNGBuilder().file_build(file)
-        finder = TemplateFinder()
-        finder.walk(tree)
-        return finder.templates
+    def find_templates(file, import_cache=None):
+        results = None
+        if import_cache is not None:
+            if not import_cache.is_file_changed(file):
+                results = import_cache.get_templates(file)
+
+        if results is None:
+            tree = builder.ASTNGBuilder().file_build(file)
+            finder = TemplateFinder()
+            finder.walk(tree)
+            results = finder.templates
+
+            if import_cache is not None:
+                import_cache.set_templates(file, results)
+        return results
 
 class Module(object):
     def __init__(self, modname, dependencies, templates):
@@ -111,12 +133,12 @@ class JavascriptModule(Module):
             yield ("js", path, self.modname)
 
 class PythonModule(Module):
-    def __init__(self, path, modname, js_deps=None):
+    def __init__(self, path, modname, import_cache=None, js_deps=None):
         if js_deps is None:
             js_deps = []
         self.js_deps = js_deps
         self.path = path
-        super(PythonModule, self).__init__(modname, ImportFinder.find_imports(path, modname), TemplateFinder.find_templates(path))
+        super(PythonModule, self).__init__(modname, ImportFinder.find_imports(path, modname, import_cache), TemplateFinder.find_templates(path, import_cache))
 
     def files(self):
         for path in self.js_deps:
@@ -189,7 +211,7 @@ def walk(top):
         for x in walk(new_path):
             yield x
 
-def files_to_modules(files, base_directory):
+def files_to_modules(files, base_directory, import_cache):
     for file in  files:
         base_name = os.path.basename(file)
         name, ext = os.path.splitext(base_name)
@@ -202,14 +224,14 @@ def files_to_modules(files, base_directory):
             modname = base_modname
         else:
             modname = name if base_modname == "" else "%s.%s" % (base_modname, name)
-        yield PythonModule(file, modname)
+        yield PythonModule(file, modname, import_cache)
 
-def package_to_modules(package):
+def package_to_modules(package, import_cache):
     dir = pkg_resources.resource_filename(package, "")
     base_dir = os.path.join(dir, "..")
     for dirname, dirnames, filenames in  walk(dir):
         abs_files = [os.path.join(dirname, f) for f in filenames]
-        for result in files_to_modules(abs_files, base_dir):
+        for result in files_to_modules(abs_files, base_dir, import_cache):
             yield result
 
 def py_visit_module(self, mod):
