@@ -88,7 +88,7 @@ def get_expr_pa(expr):
     name = expr.__class__.__name__
     if name in ("BoolOp", "BinOp", "UnaryOp"):
         return get_op_cpa(expr.op)[1:]
-    elif name in ("Lambda", "Dict", "List", "Num", "Str", "Name", "Const"):
+    elif name in ("Lambda", "Dict", "List", "Num", "Str", "Name", "Const", "Tuple"):
         return (1, False)
     elif name == "IfExp":
         return (15, False)

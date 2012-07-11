@@ -321,8 +321,11 @@
         round: Math.round,
 
         /* Attributes Methods */
-        getattr: function(obj, name){
-            return obj[name];
+        getattr: function(obj, name, dft){
+            var res = obj[name];
+            if (_.isUndefined(res))
+                return dft
+            return res
         },
         hasattr: function(obj, name){
             return _.has(obj, name);

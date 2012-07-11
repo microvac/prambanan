@@ -18,6 +18,7 @@ class ElementStack(object):
     o = el_stack_pop
     t = el_stack_text
     a = el_stack_attr
+    n = el_stack_node
 
     def capture(self):
         self.u("span")
@@ -79,7 +80,10 @@ class PageTemplate(object):
     def __init__(self, __render):
         self.__render  = __render
 
-    def render(self, el, model, encoding=None, translate=None, target_languange=None, **vars):
+    def render(self, el, model, vars=None):
+        if vars is None:
+            vars = {}
+
         stack = ElementStack(el)
         econtext = dict(vars)
         econtext["repeat"] = RepeatDict({})

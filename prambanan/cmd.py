@@ -181,21 +181,22 @@ def translate_py_file(translate_args, output, manager, file, native_file, modnam
 
     return translate(config, manager)
 
-def get_ovverridden_types():
-    libraries = all_libraries()
+def get_overridden_types(import_cache=None):
+    libraries = all_libraries(import_cache)
     overridden_types = dict([ (n,f) for l in libraries for n,f in l.get_overridden_types().items()])
     return overridden_types
 
-def get_available_modules():
-    libraries = all_libraries()
+def get_available_modules(import_cache=None):
+    libraries = all_libraries(import_cache)
     available_modules = dict([ (m.modname,m) for l in libraries for m in l.get_modules()])
     return available_modules
 
 
-def generate_modules(translate_args, output_manager, manager, modules):
+def generate_modules(translate_args, output_manager, manager, modules, overridden_types=None):
     patch_astng_manager(manager)
 
-    overridden_types = get_ovverridden_types()
+    if overridden_types is None:
+        overridden_types = get_overridden_types()
 
     for module in  modules:
         for type, file, modname in module.files():

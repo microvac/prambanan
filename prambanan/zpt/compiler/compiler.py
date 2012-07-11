@@ -280,8 +280,7 @@ def emit_translate(target, msgid, default=None):  # pragma: no cover
 
 @template
 def emit_convert_structure(target, STACK=None):
-    STACK.u(target)
-    STACK.o()
+    pass
 
 @template
 def emit_convert_and_escape(
@@ -1270,7 +1269,8 @@ class Compiler(object):
             body += emit_translate(name, name)
 
         if node.is_structure:
-            body += emit_convert_structure(name, STACK=self._current_stack)
+            pass
+            #body += emit_convert_structure(name, STACK=self._current_stack)
         else:
             body += emit_convert(name)
             body += template("STACK.t(NAME)", STACK=self._current_stack, NAME=name)
@@ -1608,11 +1608,11 @@ class Compiler(object):
 
         # Set a trivial default value for each name assigned to make
         # sure we assign a value even if the iteration is empty
-        outer += [ast.Assign(
-            targets=[store_econtext(name)
-                     for name in node.names],
-            value=load("None"))
-              ]
+        for name in node.names:
+            outer += [ast.Assign(
+                targets=[store_econtext(name)],
+                value=load("None"))
+                  ]
 
         inner = template(
             "REPEAT._next()", REPEAT=repeat

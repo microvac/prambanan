@@ -200,7 +200,7 @@ def get_all(args):
 
 
 def main(argv=sys.argv[1:]):
-    compile = False
+    compile = True
     parser = create_translate_parser()
     args = parser.parse_args(argv)
     manager = PrambananManager([])
@@ -211,6 +211,8 @@ def main(argv=sys.argv[1:]):
         if compile:
             translate_code(args, manager, output,  parser.code, package, name)
             output = beautify(output.getvalue()) if args.beautify else output.getvalue()
+            args.output.write(parser.code)
+            print "---"
             args.output.write(output)
         else:
             args.output.write(parser.code)

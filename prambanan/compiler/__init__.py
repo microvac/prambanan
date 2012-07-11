@@ -48,10 +48,7 @@ class ImportFinder(ASTWalker):
     def find_imports(file, modname, import_cache=None):
         results = None
         if import_cache is not None:
-            if not import_cache.is_file_changed(file):
-                results = import_cache.get_imports(file)
-                if results is None:
-                    print "ea"
+            results = import_cache.get_imports(file)
 
         if results is None:
             tree = builder.ASTNGBuilder().file_build(file)
@@ -93,8 +90,7 @@ class TemplateFinder(ASTWalker):
     def find_templates(file, import_cache=None):
         results = None
         if import_cache is not None:
-            if not import_cache.is_file_changed(file):
-                results = import_cache.get_templates(file)
+            results = import_cache.get_templates(file)
 
         if results is None:
             tree = builder.ASTNGBuilder().file_build(file)

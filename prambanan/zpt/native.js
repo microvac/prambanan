@@ -12,7 +12,12 @@ var convert_str = function(s){
 var lookup_attr = function(obj, key){
     var res = obj[key];
     if (!res && obj.__getitem__){
-        res = obj.__getitem__(key);
+        try{
+            res = obj.__getitem__(key);
+        }
+        catch(e){
+            return;
+        }
     }
     return (typeof res == "function") ? _.bind(res, obj) : res;
 }
@@ -26,6 +31,18 @@ var el_stack_push = function (tag){
     this.current.appendChild(child);
     this.stack.push(this.current)
     this.current = child;
+}
+
+var el_stack_node = function (node){
+    try{
+        var child = node;
+        this.current.appendChild(child);
+        this.stack.push(this.current)
+        this.current = child;
+    }
+    catch(e){
+        console.log(e);
+    }
 }
 
 var el_stack_pop = function(){

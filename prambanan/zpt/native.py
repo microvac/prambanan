@@ -26,11 +26,15 @@ def remove_el(el):
     pass
 
 def el_stack_push(self, tag):
-    if isinstance(tag, basestring):
-        child = etree.SubElement(self.current, tag)
-        self.stack.append(self.current)
-        self.current = child
-        self.tail = None
+    child = etree.SubElement(self.current, tag)
+    self.stack.append(self.current)
+    self.current = child
+    self.tail = None
+
+def el_stack_node(self, child):
+    self.stack.append(self.current)
+    self.current = child
+    self.tail = None
 
 def el_stack_pop(self):
     self.tail = self.current
