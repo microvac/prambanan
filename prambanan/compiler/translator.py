@@ -115,7 +115,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
         self.translator = config.get("translator", gettext.NullTranslations().gettext)
         self.native = config.get("native", None)
 
-        self.use_throw_helper = config.get("use_throw_helper", False)
+        self.use_throw_helper = config.get("use_throw_helper", True)
         self.overridden_types = config.get("overridden_types", {})
 
         self.export_map = {}

@@ -1,3 +1,5 @@
+var $lib = this.prambanan;
+
 var getitem = function(econtext, name, dft){
     return econtext[name];
 };
@@ -9,17 +11,18 @@ var convert_str = function(s){
     return new String(s);
 }
 
-var lookup_attr = function(obj, key){
+var lookup_attr = function(obj, key, info, filename){
     var res = obj[key];
-    if (!res && obj.__getitem__){
-        try{
-            res = obj.__getitem__(key);
-        }
-        catch(e){
-            return;
-        }
+    if (_.isUndefined(res) && obj.__getitem__){
+        res = obj.__getitem__(key);
     }
-    return (typeof res == "function") ? _.bind(res, obj) : res;
+    res = (typeof res == "function") ? _.bind(res, obj) : res;
+    if (_.isUndefined(res)){
+        var err = $lib.helpers.throw(new $lib.modules["__builtin__"].KeyError(key+" expr: "+info), filename, null, new Error());
+        err.obj = obj
+        throw err;
+    }
+    return res;
 }
 
 var remove_el = function(el){

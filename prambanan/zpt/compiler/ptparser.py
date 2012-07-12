@@ -1,6 +1,7 @@
 from functools import partial
-from chameleon.astutil import Builtin, ItemLookupOnAttributeErrorVisitor, Symbol, AnnotationAwareVisitor
+from chameleon.astutil import Builtin, ItemLookupOnAttributeErrorVisitor, Symbol, AnnotationAwareVisitor, ASTCodeGenerator
 from chameleon.codegen import template
+from chameleon.exc import TemplateError
 from chameleon.nodes import Module
 from chameleon.tales import ExpressionParser
 from chameleon.utils import read_bytes
@@ -14,16 +15,19 @@ from prambanan.zpt import lookup_attr
 from prambanan.zpt.compiler.program import BindingProgram
 from chameleon.tales import PythonExpr
 
+
 lookup_attr.__module__ = "prambanan.zpt"
 
 __author__ = 'egoz'
 
 def transform_attribute(node):
+    info = "\n".join(ASTCodeGenerator(node).lines)
     return template(
-        "lookup(object, name)",
+        "lookup(object, name, info, __filename)",
         lookup=Symbol(lookup_attr),
         object=node.value,
         name=ast.Str(s=node.attr),
+        info=ast.Str(s=info),
         mode="eval"
     )
 
@@ -74,15 +78,18 @@ class PTParser(object):
 
         default_marker = Builtin("False")
 
-        program = BindingProgram(
-            source, "xml", filename,
-            escape=True,
-            default_marker=default_marker,
-            binds=binds,
-        )
-        module = Module("initialize", program)
-        compiler = Compiler(self.engine, module, self._builtins(), strict=False)
-        self.code = compiler.code
+        try:
+            program = BindingProgram(
+                source, "xml", filename,
+                escape=True,
+                default_marker=default_marker,
+                binds=binds,
+            )
+            module = Module("initialize", program)
+            compiler = Compiler(self.engine, module, self._builtins(), strict=False, source=source, filename=filename)
+            self.code = compiler.code
+        except TemplateError as e:
+            raise
 
     def _builtins(self):
         return {

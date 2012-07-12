@@ -9,7 +9,7 @@ def deleteitem(econtext, name, backup, default):
 def convert_str(s):
     return str(s)
 
-def lookup_attr(obj, key):
+def lookup_attr(obj, key, info, filename):
     try:
         return getattr(obj, key)
     except AttributeError as exc:

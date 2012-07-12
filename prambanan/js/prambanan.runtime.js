@@ -1,6 +1,7 @@
 (function(){
     var root = this;
     var prambanan = root.prambanan = {};
+    prambanan.Error = root.Error;
 
     function Module(){};
 
@@ -9,7 +10,16 @@
     var builtins = prambanan.builtins = new Module();
     var templates = prambanan.templates = {}
 
+    prambanan.modules["__builtin__"] = builtins;
+
     var arraySlice = Array.prototype.slice;
+
+    _.extend(prambanan, {
+        load: function(file, fn){
+            prambanan.current_file = file;
+            helpers.wrap_on_error(fn)(prambanan);
+        }
+    });
 
     /*
      Module import and exports
@@ -99,20 +109,28 @@
     var subscript = {
         l: {
             i: function(obj, index){
+                var res;
                 if (obj.__getitem__)
-                    return obj.__getitem__(index);
-                return obj[index];
+                    res = obj.__getitem__(index);
+                else
+                    res = obj[index];
+                if (_.isUndefined(res)){
+                    var err_type = _.isArray(obj) ? builtins.IndexError : builtins.KeyError;
+                    helpers.throw(new err_type(index), prambanan.current_file, null, new Error());
+                }
+                return res;
             },
             s: function(list, start, stop, step){
+                if(start == null)
+                    start = 0;
+                if(stop == null)
+                    stop = list.length;
+
                 if(step == null){
                     return list.slice(start, stop);
                 }
                 else {
                     var result = [];
-                    if(start == null)
-                        start = 0;
-                    if(stop == null)
-                        stop = list.length;
                     for(var i = start; i < stop; i+=step){
                         result.push(list[i])
                     }
@@ -181,10 +199,11 @@
         subscript: subscript,
         pow: Math.pow,
         _:_,
-        throw:function(obj, file, lineno){
+        throw:function(obj, file, lineno, err){
             obj.file = file;
             obj.lineno = lineno;
-            throw obj;
+            obj.stack = err;
+            return obj;
         },
         iter: function(obj){
             return builtins.iter(obj);
@@ -227,8 +246,11 @@
             var arg;
             if(index < args.length){
                 arg = args[index];
-                if (! (arg instanceof KwArgs))
+                if (! (arg instanceof KwArgs)){
+                    if(_.isUndefined(arg))
+                        return dft;
                     return arg;
+                }
                 return arg.pop(name, dft);
             }
 
@@ -247,6 +269,26 @@
             var arg  = args[args.length - 1];
             return arg instanceof KwArgs ? arg : new KwArgs();
 
+        },
+        wrap_on_error: function(fn){
+            if (console && console.error){
+                var wrapped = function(){
+                    try{
+                        fn.apply(this, arguments);
+                    }
+                    catch(e){
+                        if(e.__str__){
+                            console.error("%s: %o. on file: '%s' line: %s\n%o %o", e.__class__.name, e.__str__(), e.file, e.lineno, e, e.stack);
+                        } else {
+                            console.error("uncaught exception %o", e);
+                        }
+                    }
+                }
+                return wrapped;
+            }
+            else {
+                return fn;
+            }
         }
     });
 
@@ -496,9 +538,6 @@
     })
     object.extend = Backbone.Model.extend;
 
-
-    // export it
-    prambanan.exports("__builtin__", builtins);
 
 
     /*

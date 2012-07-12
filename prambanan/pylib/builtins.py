@@ -4,6 +4,9 @@ class BaseException(object):
             Error.captureStackTrace(self);
         self.message = message;
 
+    def __str__(self):
+        return self.message
+
 class Exception(BaseException): pass
 
 class StandardError(Exception): pass

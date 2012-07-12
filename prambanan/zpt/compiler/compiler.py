@@ -37,7 +37,7 @@ from chameleon.nodes import Alias
 
 from chameleon.tokenize import Token
 from chameleon.config import DEBUG_MODE
-from chameleon.exc import TranslationError
+from chameleon.exc import TranslationError, LanguageError, ParseError
 from chameleon.exc import ExpressionError
 from chameleon.parser import groupdict
 
@@ -691,7 +691,10 @@ class NameTransform(object):
 
     """
 
-    def __init__(self, builtins, aliases, internals, defined_models, get_current_el):
+    def __init__(self, source, filename, builtins, aliases, internals, defined_models, get_current_el):
+        self.source = source
+        self.filename = filename
+
         self.builtins = builtins
         self.aliases = aliases
         self.internals = internals
@@ -710,8 +713,9 @@ class NameTransform(object):
             if name.startswith("__model_"):
                 name = node.id[8:]
                 if not name in self.defined_models:
-                    raise TranslationError(
-                        "Cannot find model.", name)
+                    err = ParseError(
+                        "Cannot find model", Token(name, pos=node.lineno, source=self.source, filename=self.filename))
+                    raise err
                 node.id = self.defined_models[name]
                 return node
 
@@ -913,7 +917,7 @@ class Compiler(object):
 
     global_builtins = set(builtins.__dict__)
 
-    def __init__(self, engine_factory, node, builtins={}, strict=True):
+    def __init__(self, engine_factory, node, builtins={}, strict=True, source=None, filename=None):
         self._scopes = [set()]
         self._expression_cache = {}
         self._translations = []
@@ -924,10 +928,15 @@ class Compiler(object):
         self._defined_models = {}
         self._current_stack = None
 
+        self.source = source
+        self.filename = filename
+
         internals = COMPILER_INTERNALS_OR_DISALLOWED | \
                     set(self.defaults)
 
         transform = NameTransform(
+            self.source,
+            self.filename,
             self.global_builtins | set(builtins),
             ListDictProxy(self._aliases),
             internals,
@@ -1167,6 +1176,7 @@ class Compiler(object):
         body = []
 
         body += template("__marker = object()")
+        body += template("__filename = f", f=ast.Str(s=self.filename))
         body += self.visit(node.program)
 
         return body

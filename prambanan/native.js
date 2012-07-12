@@ -1,4 +1,4 @@
-var lib = this.prambanan;
+var $lib = this.prambanan;
 
 var is_js= true;
 var items= function(obj){
@@ -10,7 +10,9 @@ var items= function(obj){
 }
 
 var get_template = function(type, config){
-    return lib.templates[type].get_template(config);
+    return $lib.templates[type].get_template(config);
 }
 
-lib.exports("prambanan", {"window": window, "document": document});
+var wrap_on_error = $lib.helpers.wrap_on_error;
+
+$lib.exports("prambanan", {"window": window, "document": document});

@@ -243,7 +243,7 @@ def py_visit_module(self, mod):
         if mod.doc:
             self.write_docstring(self.mod_scope.docstring)
 
-        self.write("(function(%s) {" % self.lib_name)
+        self.write("prambanan.load('%s', function(%s) {" % (self.input_name, self.lib_name))
         self.change_buffer(self.BODY_BUFFER)
 
         public_identifiers = self.mod_scope.module_all
@@ -281,7 +281,7 @@ def py_visit_module(self, mod):
         exported = (self.exe_first_differs(sorted(set(self.public_identifiers)), rest_text=",",
             do_visit=lambda name: self.write("%s: %s" % (name, get_name(name)))))
 
-        self.write("%s.exports('%s',{%s});})(prambanan);" % (self.lib_name, self.modname, exported))
+        self.write("%s.exports('%s',{%s});});" % (self.lib_name, self.modname, exported))
 
     builtin_var = None
     builtins = set(self.mod_scope.all_used_builtins())

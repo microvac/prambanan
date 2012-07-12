@@ -27,13 +27,13 @@ class Scope(object):
         "BaseException",
             "Exception",
                 "StandardError",
-                     "AtributeError", "TypeError", "ValueError", "NameError", "SystemError"
+                     "AttributeError", "TypeError", "ValueError", "NameError", "SystemError",
                     "LookupError",
                             "IndexError", "KeyError",
                     "ArithmeticError",
-                        "ZeroDivisionError"
+                        "ZeroDivisionError",
                     "RuntimeError",
-                        "NotImplementedError"
+                        "NotImplementedError",
     ]
 
     def __init__(self, type, node, qname, name, parent = None):

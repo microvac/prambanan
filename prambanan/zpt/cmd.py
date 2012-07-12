@@ -57,7 +57,7 @@ def make_visit(package, filename):
 
         self.change_buffer(self.HEADER_BUFFER)
 
-        self.write("(function(%s) {" % self.lib_name)
+        self.write("prambanan.load('%s', function(%s) {" % (filename, self.lib_name))
         self.change_buffer(self.BODY_BUFFER)
 
 
@@ -72,7 +72,7 @@ def make_visit(package, filename):
         exported = (self.exe_first_differs(sorted(set(self.public_identifiers)), rest_text=",",
             do_visit=lambda name: self.write("%s: %s" % (name, get_name(name)))))
 
-        self.write("%s.templates.zpt.export('%s','%s', render);})(prambanan);" % (self.lib_name, package, filename))
+        self.write("%s.templates.zpt.export('%s','%s', render);});" % (self.lib_name, package, filename))
 
         builtin_var = None
         builtins = set(self.mod_scope.all_used_builtins())
@@ -212,6 +212,7 @@ def main(argv=sys.argv[1:]):
             translate_code(args, manager, output,  parser.code, package, name)
             output = beautify(output.getvalue()) if args.beautify else output.getvalue()
             args.output.write(parser.code)
+            print "---"
             print "---"
             args.output.write(output)
         else:
