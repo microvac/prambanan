@@ -403,7 +403,7 @@ class BindingProgram(MacroProgram):
                     bind_model,bind_ons = first_split.split(".", 1)
                     bind_ons = bind_ons.strip().split(".")
                 else:
-                    bind_model = ""
+                    bind_model = first_split
                     bind_ons = []
 
                 bind_attrs = []

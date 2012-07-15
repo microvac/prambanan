@@ -510,7 +510,7 @@
         delegate builtin print to global.console or global.print
     */
     if (root.console){
-        builtins.print = root.console.log
+        builtins.print = root.console.log.bind(console)
     }
     else {
         builtins.print = function(s){
