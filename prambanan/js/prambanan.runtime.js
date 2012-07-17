@@ -412,6 +412,9 @@
             return _.any(l, function(c){return c === true; })
         },
         len: function(obj){
+            if(obj.__len__){
+                return obj.__len__()
+            }
             return _.isArray(obj) || _.isString(obj) ? obj.length : _.keys(obj).length;
         },
         reversed: function (a) {
