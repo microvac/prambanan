@@ -245,7 +245,7 @@ class datetime(date, time):
         raise NotImplementedError("astimezone")
     
     def date(self):
-        return date(self.year, self.month, self.day)
+        return JS("new __date(self.year, self.month, self.day)")
     
     def time(self):
         return time(self.hour, self.minute, self.second, self.microsecond)
