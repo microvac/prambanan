@@ -280,7 +280,7 @@
                         if(e.__str__){
                             console.error("%s: %o. on file: '%s' line: %s\n%o %o", e.__class__.name, e.__str__(), e.file, e.lineno, e, e.stack);
                         } else {
-                            console.error("uncaught exception %o", e);
+                            throw e;
                         }
                     }
                 }
@@ -319,6 +319,8 @@
         list: function(o){
             if (_.isArray(o))
                 return o;
+            if (o.__iter__)
+                return o.__iter__();
             throw new Error("not implemented");
         },
         tuple: function(o){
@@ -370,7 +372,7 @@
             return res
         },
         hasattr: function(obj, name){
-            return _.has(obj, name);
+            return !_.isUndefined(obj[name]);
         },
         setattr: function(obj, name, value){
             obj[name] = value;

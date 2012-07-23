@@ -1039,6 +1039,7 @@ class Compiler(object):
                     sub += template("MODEL.on('change:%s', ON_CHANGE)" % attr, ON_CHANGE=on_change_name, MODEL=model)
             else:
                 sub += template("MODEL.on('change', ON_CHANGE)", ON_CHANGE=on_change_name, MODEL=model)
+            sub += template("ON_CHANGE()", ON_CHANGE=on_change_name)
             result += [ast.If(test=load(model), body=sub)]
 
             return result
