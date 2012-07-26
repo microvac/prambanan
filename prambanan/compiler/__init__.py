@@ -243,7 +243,7 @@ def py_visit_module(self, mod):
     if not self.bare:
         self.change_buffer(self.HEADER_BUFFER)
         if mod.doc:
-            self.write_docstring(self.mod_scope.docstring)
+            self.write_docstring(mod.doc)
 
         self.write("prambanan.load('%s', function(%s) {" % (self.input_name, self.lib_name))
         self.change_buffer(self.BODY_BUFFER)
