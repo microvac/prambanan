@@ -92,3 +92,65 @@ class PageTemplate(object):
 
         return stack.current
 
+def bind_change_attr(parent, bind_ons, bind_last_on_change):
+    result = None
+    if len(bind_ons):
+        attr = bind_ons[0]
+        current = None
+        next_on_change = None
+        event_name = "change:%s"%attr
+        def on_change_attr():
+            global current, next_on_change
+            if current:
+                current.off(event_name, next_on_change)
+            next_on_change = None
+            if parent:
+                current = parent.get(attr)
+            if current:
+                next_on_change = bind_change_attr(current, bind_ons[1:], bind_last_on_change)
+                current.on("change", next_on_change)
+                next_on_change()
+        result = on_change_attr
+    else:
+        result = bind_last_on_change(parent)
+    result()
+    return result
+
+def bind_change(model, bind_ons, bind_attrs, on_change):
+    def bind_last_on_change(last_model):
+        if len(bind_attrs):
+            for attr in bind_attrs:
+                last_model.on("change:%s"%attr, on_change)
+        else:
+            last_model.on("change",on_change)
+        return on_change
+
+    bind_change_attr(model, bind_ons, bind_last_on_change)
+
+def bind_repeat(collection, col_on_add):
+    el_map = {}
+    def on_add(model):
+        el_map[model.cid] = col_on_add(model)
+    def on_remove(model):
+        remove_el(model.cid)
+        del el_map[model.cid]
+    def on_reset(models):
+        global el_map
+        for cid in el_map:
+            remove_el(el_map[cid])
+        el_map = {}
+        if models:
+            for model in models:
+                on_add(model)
+
+    for model in collection:
+        on_add(model)
+
+    collection.on("add", on_add)
+    collection.on("remove", on_remove)
+    collection.on("reset", on_reset)
+
+def bind_replay(bindable, events, on_event):
+    for event in events:
+        bindable.on(event, on_event)
+    on_event()

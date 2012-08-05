@@ -53,7 +53,7 @@ from chameleon.utils import ast
 from chameleon.utils import safe_native
 from chameleon.utils import builtins
 from chameleon.utils import decode_htmlentities
-from prambanan.zpt import getitem, deleteitem, convert_str,escape, remove_el
+from prambanan.zpt import getitem, deleteitem, convert_str,escape, remove_el, bind_change, bind_repeat, bind_replay
 
 convert_str.__module__ = "prambanan.zpt"
 deleteitem.__module__ = "prambanan.zpt"
@@ -131,75 +131,6 @@ def store_econtext(name):
 def store_rcontext(name):
     name = native_string(name)
     return subscript(name, load("rcontext"), ast.Store())
-
-def wrap_model_change(node, model, bind_ons, base_on_change, create_last_on_change):
-
-    def get_names(prefix, i):
-        if i != -1:
-            name = "_".join(bind_ons[0:i+1])
-            current = identifier("%s_%s"% (prefix, name), id(node))
-        else:
-            current = model
-
-        if i > 0:
-            name = "_".join(bind_ons[0:i])
-            next = identifier("%s_%s" % (prefix, name), id(node))
-        elif i == 0:
-            next = model
-        else:
-            next = None
-        return current, next
-    def glbl(name):
-        return ast.Global([ast.Name(id=name, ctx=ast.Load())])
-
-    body = []
-    body += base_on_change
-    current_model, next_model = get_names("m", len(bind_ons) -1)
-    body += template("MODEL=None", MODEL=current_model)
-
-    on_change_name = identifier("on_change_%s" % ("_".join(bind_ons[0:len(bind_ons)])), id(node))
-
-    last_on_change=create_last_on_change(current_model, next_model, bind_ons[-1])
-    last_on_change = [glbl(current_model)] +last_on_change
-
-
-    on_change_func = [ast.FunctionDef(
-        name=on_change_name, args=ast.arguments(
-            args=[],
-            defaults=(),
-        ),
-        body=last_on_change
-        )
-    ]
-    body+= on_change_func
-
-    for i in range(len(bind_ons) - 2, -1, -1):
-        bind_on = bind_ons[i]
-        current_model, next_model = get_names("m", i)
-        body += template("MODEL=None", MODEL=current_model)
-
-        func_body = []
-        func_body += [glbl(current_model)]
-        func_body += emit_model_change(current_model, next_model, ast.Str(s="change:%s"%bind_ons[i-1]), ast.Str(s=bind_on), on_change_name)
-
-        on_change_name = identifier("on_change_%s" % "_".join(bind_ons[0:i+1]), id(node))
-
-        on_change_func = [ast.FunctionDef(
-            name=on_change_name, args=ast.arguments(
-                args=[],
-                defaults=(),
-            ),
-            body=func_body
-            )
-        ]
-        body += on_change_func
-
-    body += template("MODEL.on(CHANGE_NAME, ON_CHANGE)", MODEL = model, CHANGE_NAME=ast.Str("change:%s"%bind_ons[0]), ON_CHANGE=on_change_name)
-    body += template("ON_CHANGE()", ON_CHANGE=on_change_name)
-
-
-    return body
-
 
 def set_error(token, exception):
     try:
@@ -1018,45 +949,57 @@ class Compiler(object):
             raise TranslationError(
                 "Cannot find bind model on current context.", node.model_name)
 
-        def create_last_on_change(model, next_model, attr):
-            result = []
+        body += on_change_func
+        bind_attrs = ast.Tuple(
+            elts=[ast.Str(s=attr) for attr in node.bind_attrs],
+            ctx=ast.Load())
+        bind_ons = ast.Tuple(
+            elts=[ast.Str(s=attr) for attr in node.bind_ons],
+            ctx=ast.Load())
+        body += template("BIND_CHANGE(MODEL, BIND_ONS, BIND_ATTRS, ON_CHANGE)",
+            BIND_CHANGE=Symbol(bind_change), MODEL=load(self._defined_models[node.model_name]),
+            BIND_ATTRS=bind_attrs, BIND_ONS=bind_ons, ON_CHANGE=on_change_name)
 
-            sub = []
-            if len(node.bind_attrs):
-                for attr in node.bind_attrs:
-                    sub += template("MODEL.off('change:%s', ON_CHANGE)" % attr, ON_CHANGE=on_change_name, MODEL=model)
-            else:
-                sub += template("MODEL.off('change', ON_CHANGE)", ON_CHANGE=on_change_name, MODEL=model)
-            result += [ast.If(test=load(model), body=sub)]
+        body.append(Comment("end model-binding"))
+        return body
 
-            sub = []
-            sub += template("MODEL = NEXT_MODEL.get(ATTR)", MODEL = model, NEXT_MODEL=next_model, ATTR=ast.Str(s=attr))
-            result += [ast.If(test=load(next_model), body=sub)]
+    def visit_BindReplay(self, node):
+        body = []
 
-            sub = []
-            if len(node.bind_attrs):
-                for attr in node.bind_attrs:
-                    sub += template("MODEL.on('change:%s', ON_CHANGE)" % attr, ON_CHANGE=on_change_name, MODEL=model)
-            else:
-                sub += template("MODEL.on('change', ON_CHANGE)", ON_CHANGE=on_change_name, MODEL=model)
-            sub += template("ON_CHANGE()", ON_CHANGE=on_change_name)
-            result += [ast.If(test=load(model), body=sub)]
+        body.append(Comment("start replay-binding"))
 
-            return result
+        new_stack = identifier("stack", id(node))
+        old_stack = self._current_stack
+        body += template("CAPTURED_STACK = STACK.capture()", CAPTURED_STACK=new_stack, STACK=old_stack)
 
+        self._current_stack = new_stack
+        self._aliases.append(self._aliases[-1].copy())
 
-        if node.bind_ons:
-            body += wrap_model_change(node, self._defined_models[node.model_name], node.bind_ons, on_change_func, create_last_on_change)
-        else:
-            body += on_change_func
-            model = self._defined_models[node.model_name]
-            if len(node.bind_attrs):
-                for attr in node.bind_attrs:
-                    body += template("MODEL.on('change:%s', ON_CHANGE)" % attr, ON_CHANGE=on_change_name, MODEL=model)
-            else:
-                body += template("MODEL.on('change', ON_CHANGE)", ON_CHANGE=on_change_name, MODEL=model)
-            body += template("ON_CHANGE()", ON_CHANGE=on_change_name)
+        inner = self.visit(node.node)
 
+        self._aliases.pop()
+        self._current_stack = old_stack
+
+        on_event_name = identifier("on_event", id(node))
+        on_event_func = [ast.FunctionDef(
+            name=on_event_name, args=ast.arguments(
+                args=[],
+                defaults=(),
+            ),
+            body=inner
+        )]
+
+        body += on_event_func
+
+        bindable = "__bindable"
+        body += self._engine(node.expression, store(bindable))
+        events = ast.Tuple(
+            elts=[ast.Str(s=attr) for attr in node.events],
+            ctx=ast.Load())
+
+        body += template("BIND_REPLAY(BINDABLE, EVENTS, ON_EVENT)",
+            BIND_REPLAY=Symbol(bind_replay), BINDABLE=bindable,
+            EVENTS=events, ON_EVENT=on_event_name)
 
         body.append(Comment("end model-binding"))
         return body
@@ -1070,9 +1013,6 @@ class Compiler(object):
         old_stack = self._current_stack
         body += template("CAPTURED_STACK = STACK.capture_for_repeat()", CAPTURED_STACK=new_stack, STACK=old_stack)
 
-        el_map = identifier("el_map", id(node))
-        body += template("EL_MAP = {}", EL_MAP=el_map)
-
         new_stack = identifier("stack", id(node))
 
         self._current_stack = new_stack
@@ -1083,7 +1023,7 @@ class Compiler(object):
 
         inner_on_add = []
         inner_on_add += self.visit(node.node)
-        inner_on_add += template("EL_MAP[MODEL.cid] = STACK.repeat_el", EL_MAP=el_map, STACK=self._current_stack, MODEL=model_name)
+        inner_on_add += template("return STACK.repeat_el", STACK=self._current_stack)
 
         on_add_name = identifier("on_add", id(node))
         on_add_func = [ast.FunctionDef(
@@ -1095,54 +1035,10 @@ class Compiler(object):
         )]
         body += on_add_func
 
-        inner_on_remove = []
-        inner_on_remove += template("REMOVE_EL(EL_MAP[MODEL.cid])", REMOVE_EL=Symbol(remove_el), EL_MAP=el_map, MODEL=model_name)
-        inner_on_remove += template("del EL_MAP[MODEL.cid]", EL_MAP=el_map, MODEL=model_name)
-        on_remove_name = identifier("on_remove", id(node))
-        on_remove_func = [ast.FunctionDef(
-            name=on_remove_name, args=ast.arguments(
-                args=[load(model_name)],
-                defaults=(),
-            ),
-            body=inner_on_remove
-        )]
-        body += on_remove_func
-
-        inner_on_reset = [ast.Global([load(el_map)])]
-        inner_on_reset += [ast.For(
-            target=store("cid"),
-            iter=load(el_map),
-            body = template("REMOVE_EL(EL_MAP[cid])", REMOVE_EL=Symbol(remove_el), EL_MAP=el_map)
-        )]
-        inner_on_reset += template("EL_MAP = {}" , EL_MAP=el_map)
-        inner_on_reset.append(
-            ast.If(
-                test=load("models"),
-                body=[ast.For(
-                    target=store("model"),
-                    iter=load("models"),
-                    body=template("ON_ADD(model)", ON_ADD=on_add_name))
-                ]))
-        on_reset_name = identifier("on_reset", id(node))
-        on_reset_func = [ast.FunctionDef(
-            name=on_reset_name, args=ast.arguments(
-                args=[load("models")],
-                defaults=(),
-            ),
-            body=inner_on_reset
-        )]
-        body += on_reset_func
-
         collection = "__collection"
         initializer = self._engine(node.expression, store(collection))
-        initializer += [ast.For(
-            target=store("model"),
-            iter=load(collection),
-            body=template("ON_ADD(model)", ON_ADD=on_add_name)
-        )]
-        initializer += template("COLLECTION.on('add', ON_ADD)", COLLECTION=collection, ON_ADD=on_add_name)
-        initializer += template("COLLECTION.on('remove', ON_REMOVE)", COLLECTION=collection, ON_REMOVE=on_remove_name)
-        initializer += template("COLLECTION.on('reset', ON_RESET)", COLLECTION=collection, ON_RESET=on_reset_name)
+        initializer += template("BIND_REPEAT(COLLECTION, ON_ADD)",
+            BIND_REPEAT=Symbol(bind_repeat), COLLECTION=load(collection), ON_ADD=on_add_name)
         body += initializer
 
         self._aliases.pop()

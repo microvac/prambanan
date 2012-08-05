@@ -14,6 +14,11 @@ class BindChange(Node):
 
     _fields = "model_name", "bind_ons", "bind_attrs", "node", "start_tag"
 
+class BindReplay(Node):
+    """Element sequence."""
+
+    _fields = "expression", "events", "node"
+
 class DefineModel(Node):
     """Element sequence."""
 
@@ -388,6 +393,16 @@ class BindingProgram(MacroProgram):
 
 
         stag.replayable = False
+        if self.binds:
+            try:
+                bind_replay_clause = ns[(PRAMTAL, "bind-replay")]
+                splits = bind_replay_clause.split(" ")
+                if len(splits) != 2:
+                    raise LanguageError("Invalid bind replay.", bind_replay_clause)
+                events = splits[1].split(";")
+                slot = BindReplay(splits[0], events, slot)
+            except KeyError:
+                pass
         if self.binds:
             try:
                 bind_clause = ns[(PRAMTAL, "bind-change")]
