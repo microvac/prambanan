@@ -22,7 +22,7 @@ class BindReplay(Node):
 class DefineModel(Node):
     """Element sequence."""
 
-    _fields = "alias", "expression", "node"
+    _fields = "models", "node"
 
 class BindRepeat(Node):
     """Element sequence."""
@@ -364,18 +364,6 @@ class BindingProgram(MacroProgram):
             slot,
             ON_ERROR
         )
-        try:
-            define_model_clause = ns[(PRAMTAL, "define-model")]
-        except KeyError:
-            pass
-        else:
-            splits = define_model_clause.split(" ")
-            if len(splits) != 2:
-                raise LanguageError("Invalid define model.", define_model_clause)
-            if not splits[0].startswith("#"):
-                raise LanguageError("need # in alias.", define_model_clause)
-            slot = DefineModel(splits[0][1:], splits[1], slot)
-
         stag.replayable = False
         if self.binds:
             try:
@@ -430,7 +418,22 @@ class BindingProgram(MacroProgram):
                 slot = BindRepeat(splits[0][1:], splits[1], slot)
                 stag.repeatable = True
 
-
+        try:
+            define_model_clause = ns[(PRAMTAL, "define-model")]
+        except KeyError:
+            pass
+        else:
+            pairs = define_model_clause.split(";")
+            models = []
+            for pair in pairs:
+                pair = pair.strip()
+                splits = pair.split(" ")
+                if len(splits) != 2:
+                    raise LanguageError("Invalid define model.", pair)
+                if not splits[0].startswith("#"):
+                    raise LanguageError("need # in alias.", pair)
+                models.append((splits[0][1:], splits[1]))
+            slot = DefineModel(models, slot)
 
         return slot
 

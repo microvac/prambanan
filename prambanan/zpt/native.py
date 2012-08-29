@@ -10,7 +10,7 @@ def convert_str(s):
     return str(s)
 
 def lookup_attr(obj, key, info, filename):
-    try:
+    try :
         return getattr(obj, key)
     except AttributeError as exc:
         try:
@@ -54,8 +54,6 @@ def el_stack_text(self, text):
             self.current.text = self.current.text + text
 
 def el_stack_attr(self, name, value):
-    if value == False:
-        return
     self.current.attrib[name] = value
 
 def el_stack_replay(self, tag):

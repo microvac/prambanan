@@ -10,9 +10,12 @@ gen_dir = os.path.join(zpt_dir, "gen")
 if not os.path.exists(gen_dir):
     os.makedirs(gen_dir)
 
+#tmpl = PageTemplate(open(os.path.join(zpt_dir, "testattr.pt")).read())
+#print tmpl.render(a=0, c=False)
+
 class TestZpt(unittest.TestCase):
 
     def test_translate(self):
-        name = "bindreplay"
+        name = "testattr"
         parser = PTParser(os.path.join(zpt_dir, name+".pt"), binds=True)
         print parser.code

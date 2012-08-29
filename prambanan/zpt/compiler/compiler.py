@@ -217,8 +217,12 @@ def emit_convert_structure(target, STACK=None):
 def emit_convert_and_escape(
     target, quote=None, quote_entity=None, str=unicode_string, long=long,
     type=type, encoded=byte_string,
-    default_marker=None, default=None):  # pragma: no cover
-    target = escape(target)
+    default_marker=None, default=None, convert=Symbol(convert_str)):  # pragma: no cover
+    if target is not None:
+        if target is default_marker:
+            target = default
+        else:
+            target = convert(target)
 
 
 class Interpolator(object):
@@ -481,16 +485,17 @@ class ExpressionEngine(object):
 
             entity = char2entity(quote or '\0')
 
-            if body is None:
-                return emit_convert_and_escape(
-                    target,
-                    quote=ast.Str(s=quote),
-                    quote_entity=ast.Str(s=entity),
-                    default=self._default,
-                    default_marker=self._default_marker,
-                    )
-            else:
-                return template("T = convert(F)", F=body, T=target, convert=Symbol(convert_str))
+            result = []
+            if body is not None:
+                result += template("T = F", F=body, T=target)
+
+            return result + emit_convert_and_escape(
+                target,
+                quote=ast.Str(s=quote),
+                quote_entity=ast.Str(s=entity),
+                default=self._default,
+                default_marker=self._default_marker,
+                )
 
         return emit_convert(
             target,
@@ -1048,9 +1053,12 @@ class Compiler(object):
         return body
 
     def visit_DefineModel(self, node):
-        name = identifier("model_%s" % node.alias, id(node))
-        self._defined_models[node.alias] = name
-        body = self._engine(node.expression, store(name))
+        #todo delete defined_models
+        body = []
+        for alias, expression in node.models:
+            name = identifier("model_%s" % alias, id(node))
+            self._defined_models[alias] = name
+            body += self._engine(expression, store(name))
         body += self.visit(node.node)
         return body
 
@@ -1386,7 +1394,7 @@ class Compiler(object):
         target = identifier("attr", node.name)
         body = self._engine(node.expression, store(target))
         return body + template(
-            "STACK.a(NAME,  VALUE)",
+            "if VALUE is not None: STACK.a(NAME,  VALUE)",
             STACK=self._current_stack,
             NAME=ast.Str(s=node.name),
             VALUE=target,

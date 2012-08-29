@@ -100,7 +100,7 @@ class PTParser(object):
 
     @property
     def engine(self):
-        default_marker = ast.Str(s="__default__")
+        default_marker = Builtin("False")
 
         return partial(
             ExpressionEngine,
