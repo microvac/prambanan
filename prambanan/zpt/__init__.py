@@ -132,7 +132,7 @@ def bind_repeat(collection, col_on_add):
     def on_add(model):
         el_map[model.cid] = col_on_add(model)
     def on_remove(model):
-        remove_el(model.cid)
+        remove_el(el_map[model.cid])
         del el_map[model.cid]
     def on_reset(models):
         global el_map

@@ -54,6 +54,8 @@ def el_stack_text(self, text):
             self.current.text = self.current.text + text
 
 def el_stack_attr(self, name, value):
+    if value == False:
+        return
     self.current.attrib[name] = value
 
 def el_stack_replay(self, tag):

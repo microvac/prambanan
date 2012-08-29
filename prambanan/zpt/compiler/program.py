@@ -376,22 +376,6 @@ class BindingProgram(MacroProgram):
                 raise LanguageError("need # in alias.", define_model_clause)
             slot = DefineModel(splits[0][1:], splits[1], slot)
 
-        stag.repeatable = False
-        if self.binds:
-            try:
-                bind_repeat_clause = ns[(PRAMTAL, "bind-repeat")]
-            except KeyError:
-                pass
-            else:
-                splits = bind_repeat_clause.split(" ")
-                if len(splits) != 2:
-                    raise LanguageError("Invalid define model.", bind_repeat_clause)
-                if not splits[0].startswith("#"):
-                    raise LanguageError("need # in alias.", bind_repeat_clause)
-                slot = BindRepeat(splits[0][1:], splits[1], slot)
-                stag.repeatable = True
-
-
         stag.replayable = False
         if self.binds:
             try:
@@ -401,6 +385,7 @@ class BindingProgram(MacroProgram):
                     raise LanguageError("Invalid bind replay.", bind_replay_clause)
                 events = splits[1].split(";")
                 slot = BindReplay(splits[0], events, slot)
+                stag.replayable = True
             except KeyError:
                 pass
         if self.binds:
@@ -429,6 +414,22 @@ class BindingProgram(MacroProgram):
                 slot = BindChange(bind_model, bind_ons, bind_attrs, slot )
             except KeyError:
                 pass
+
+        stag.repeatable = False
+        if self.binds:
+            try:
+                bind_repeat_clause = ns[(PRAMTAL, "bind-repeat")]
+            except KeyError:
+                pass
+            else:
+                splits = bind_repeat_clause.split(" ")
+                if len(splits) != 2:
+                    raise LanguageError("Invalid define model.", bind_repeat_clause)
+                if not splits[0].startswith("#"):
+                    raise LanguageError("need # in alias.", bind_repeat_clause)
+                slot = BindRepeat(splits[0][1:], splits[1], slot)
+                stag.repeatable = True
+
 
 
         return slot

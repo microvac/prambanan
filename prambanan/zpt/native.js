@@ -66,6 +66,10 @@ var el_stack_replay = function(tag){
 }
 
 var el_stack_attr = function(name, value){
+    //todo hack for checkbox
+    if(value+"" === "false"){
+        return;
+    }
     this.current.setAttribute(name, value);
 }
 
