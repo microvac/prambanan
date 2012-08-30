@@ -38,10 +38,7 @@ var el_stack_push = function (tag){
 
 var el_stack_node = function (node){
     try{
-        var child = node;
-        this.current.appendChild(child);
-        this.stack.push(this.current)
-        this.current = child;
+        this.current.appendChild(node);
     }
     catch(e){
         console.log(e);

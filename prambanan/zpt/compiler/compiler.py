@@ -659,7 +659,7 @@ class NameTransform(object):
             return node
 
         if name == "el":
-            return self.get_current_el()
+            return Builtin("None")
 
         if isinstance(node.ctx, ast.Store):
             return store_econtext(name)
@@ -1184,8 +1184,7 @@ class Compiler(object):
             body += emit_translate(name, name)
 
         if node.is_structure:
-            pass
-            #body += emit_convert_structure(name, STACK=self._current_stack)
+            body += template("STACK.n(NAME)", STACK=self._current_stack, NAME=name)
         else:
             body += emit_convert(name)
             body += template("STACK.t(NAME)", STACK=self._current_stack, NAME=name)
