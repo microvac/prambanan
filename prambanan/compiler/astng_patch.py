@@ -123,6 +123,8 @@ def file_from_modname(modname, path=None, context_file=None):
         loader = pkgutil.find_loader(modname)
         if loader is None:
             raise
+        if not hasattr(loader, "filename"):
+            raise
         init_file = os.path.join(loader.filename, "__init__.py")
         if os.path.exists(init_file):
             return init_file
