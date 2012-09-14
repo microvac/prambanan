@@ -1,9 +1,14 @@
-from logilab.astng.exceptions import InferenceError, NotFoundError
+from logilab.astng.exceptions import InferenceError, NotFoundError, ASTNGBuildingException
 import logilab.astng
 import logilab.astng.bases as bases
 import logilab.astng.protocols as protocols
 import logilab.astng.builder
 import logilab.astng.scoped_nodes
+import logilab.common.modutils
+import logilab.astng.manager
+from logilab.common.modutils import file_from_modpath
+import pkgutil
+import os
 
 class Instance(bases.Instance):
 
@@ -107,4 +112,38 @@ def for_assigned_stmts(self, node, context=None, asspath=None):
             yield infered
 
 nodes.For.assigned_stmts = bases.raise_if_nothing_infered(for_assigned_stmts)
+
+def file_from_modname(modname, path=None, context_file=None):
+    """
+    handle namespace package
+    """
+    try:
+        return file_from_modpath(modname.split("."), path, context_file)
+    except ImportError:
+        loader = pkgutil.find_loader(modname)
+        if loader is None:
+            raise
+        init_file = os.path.join(loader.filename, "__init__.py")
+        if os.path.exists(init_file):
+            return init_file
+        else:
+            raise
+
+def file_from_module_name(self, modname, contextfile):
+    try:
+        value = self._mod_file_cache[(modname, contextfile)]
+    except KeyError:
+        try:
+            value = file_from_modname(modname,
+                context_file=contextfile)
+        except ImportError, ex:
+            msg = 'Unable to load module %s (%s)' % (modname, ex)
+            value = ASTNGBuildingException(msg)
+        self._mod_file_cache[(modname, contextfile)] = value
+    if isinstance(value, ASTNGBuildingException):
+        raise value
+    return value
+
+logilab.astng.manager.ASTNGManager.file_from_module_name = file_from_module_name
+
 

@@ -10,7 +10,8 @@ class PrambananLibrary(object):
         """
         "return directory containing <qname>:<"Function"|"Class">
         """
-        pass
+        return {}
+
 
     def get_modules(self):
         """

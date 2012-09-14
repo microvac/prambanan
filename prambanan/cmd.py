@@ -318,7 +318,7 @@ def main(argv=sys.argv[1:]):
     logging.basicConfig(format=FORMAT)
 
     main_args = parse_args(argv, main_parser)
-    modules = list(files_to_modules([os.path.abspath(f) for f in main_args.files], os.path.abspath("")))
+    modules = list(files_to_modules([os.path.abspath(f) for f in main_args.files], os.path.abspath(""), None))
     manager = PrambananManager(modules)
 
     if main_args.output_file is not None:

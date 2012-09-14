@@ -38,7 +38,10 @@ class PrambananManager(ASTNGManager):
             if modname in self.mod_files:
                 return self.mod_files[modname]
 
-        return super(PrambananManager, self).file_from_module_name(modname, contextfile)
+        result =  super(PrambananManager, self).file_from_module_name(modname, contextfile)
+
+        return result
+
 
     def is_file_changed(self, file):
         if self.cache_file is None:
