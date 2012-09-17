@@ -20,3 +20,5 @@ pip-log.txt
 **/test/result/*
 **/test/output/gen/*
 **/test/zpt/*
+
+fab.ini
