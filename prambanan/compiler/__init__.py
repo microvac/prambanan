@@ -135,8 +135,6 @@ class PythonModule(Module):
         self.js_deps = js_deps
         self.path = path
         super(PythonModule, self).__init__(modname, ImportFinder.find_imports(path, modname, import_cache), TemplateFinder.find_templates(path, import_cache))
-        if modname == "borobudur.dt.api":
-            print "ea"
 
     def files(self):
         for path in self.js_deps:
