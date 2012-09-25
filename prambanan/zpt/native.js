@@ -71,7 +71,15 @@ if (! __templates.zpt){
     __templates.zpt = {
         templates: {},
         get_template: function(template_config){
-            return this.templates[template_config[0]][template_config[1]];
+            var package = this.templates[template_config[0]];
+            if (!package){
+                throw new Error("cannot find zpt templates for package"+template_config[0])
+            }
+            var template = package[template_config[1]];
+            if (!template){
+                throw new Error("cannot find template "+template_config[1] + " in package "+template_config[0]);
+            }
+            return template;
         },
         export: function(namespace, path, render){
             var pack = this.templates[namespace] || (this.templates[namespace] = {})

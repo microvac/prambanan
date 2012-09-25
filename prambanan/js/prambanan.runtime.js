@@ -198,9 +198,11 @@
     function print_exception(e){
         window.e = e;
         if (e.stack){
+            //chrome
             console.error("%s: %o. on file: '%s' line: %s\n%o %o", e.__class__.name, e.__str__(), e.file, e.lineno, e, e.stack);
         }
         else {
+            //firefox
             console.group(e);
             console.error(e.stacks[e.stacks.length-1]);
             console.groupEnd();

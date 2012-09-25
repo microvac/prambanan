@@ -10,7 +10,11 @@ var items= function(obj){
 }
 
 var get_template = function(type, config){
-    return $lib.templates[type].get_template(config);
+    var templates = $lib.templates[type];
+    if (!templates){
+        throw new Error("cannot find template type: "+type)
+    }
+    return templates.get_template(config);
 }
 
 var wrap_on_error = $lib.helpers.wrap_on_error;
