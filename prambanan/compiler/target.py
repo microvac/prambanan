@@ -697,7 +697,7 @@ class JSDefaultTranslator(BaseTranslator):
                 if self.use_throw_helper:
                     throw = self.get_util_var_name("_throw", "%s.helpers.throw" % self.lib_name)
                     err = self.get_util_var_name("_err", "%s.Error" % self.lib_name)
-                    file = self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
+                    file = self.get_util_var_name("__py_file__", "%s" % simplejson.dumps(self.input_path))
                     self.write("else { throw %s(%s, %s, %d, new %s()); }"% (throw, ex_var, file, tf.lineno, err))
                 else:
                     self.write("else { throw %s }" % ex_var)
@@ -783,7 +783,7 @@ class JSDefaultTranslator(BaseTranslator):
         if self.use_throw_helper:
             throw = self.get_util_var_name("_throw", "%s.helpers.throw" %self.lib_name)
             err = self.get_util_var_name("_err", "%s.Error" % self.lib_name)
-            file = self.get_util_var_name("__py_file__", "'%s'" % self.input_name)
+            file = self.get_util_var_name("__py_file__", "%s" % simplejson.dumps(self.input_path))
             self.write("throw %s(%s, %s, %d, new %s())"% (throw, exc, file, r.lineno, err))
         else:
             self.write("throw %s" % exc)

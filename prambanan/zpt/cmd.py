@@ -57,7 +57,7 @@ def make_visit(package, filename):
 
         self.change_buffer(self.HEADER_BUFFER)
 
-        self.write("prambanan.load('%s', function(%s) {" % (filename, self.lib_name))
+        self.write("prambanan.load('%s:%s', function(%s) {" % (package, filename, self.lib_name))
         self.change_buffer(self.BODY_BUFFER)
 
 

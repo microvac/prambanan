@@ -195,6 +195,18 @@
         }
     });
 
+    function print_exception(e){
+        window.e = e;
+        if (e.stack){
+            console.error("%s: %o. on file: '%s' line: %s\n%o %o", e.__class__.name, e.__str__(), e.file, e.lineno, e, e.stack);
+        }
+        else {
+            console.group(e);
+            console.error(e.stacks[e.stacks.length-1]);
+            console.groupEnd();
+        }
+    }
+
     _.extend(helpers, {
         subscript: subscript,
         pow: Math.pow,
@@ -202,7 +214,10 @@
         throw:function(obj, file, lineno, err){
             obj.file = file;
             obj.lineno = lineno;
-            obj.stack = err;
+            if (!obj.stacks){
+                obj.stacks = [];
+            }
+            obj.stacks.unshift(err);
             return obj;
         },
         iter: function(obj){
@@ -278,7 +293,7 @@
                     }
                     catch(e){
                         if(e.__str__){
-                            console.error("%s: %o. on file: '%s' line: %s\n%o %o", e.__class__.name, e.__str__(), e.file, e.lineno, e, e.stack);
+                            print_exception(e);
                         } else {
                             throw e;
                         }

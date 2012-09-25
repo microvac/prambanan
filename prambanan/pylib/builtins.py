@@ -2,6 +2,8 @@ class BaseException(object):
     def __init__(self, message):
         if Error.captureStackTrace:
             Error.captureStackTrace(self);
+        else:
+            Error.apply(self, arguments)
         self.message = message;
 
     def __str__(self):

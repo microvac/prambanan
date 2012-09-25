@@ -109,6 +109,7 @@ class BaseTranslator(BufferedWriter, ASTWalker):
         self.direct_visitors = direct_visitors
 
         self.input_name = config.get("input_name", "")
+        self.input_path = config.get("input_path", self.input_name)
         self.modname = config.get("modname", "")
         self.warnings = config.get("warnings", {})
         self.bare = config.get("bare", False)

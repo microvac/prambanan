@@ -243,7 +243,7 @@ def py_visit_module(self, mod):
         if mod.doc:
             self.write_docstring(mod.doc)
 
-        self.write("prambanan.load('%s', function(%s) {" % (self.input_name, self.lib_name))
+        self.write("prambanan.load('%s', function(%s) {" % (self.modname, self.lib_name))
         self.change_buffer(self.BODY_BUFFER)
 
         public_identifiers = self.mod_scope.module_all
