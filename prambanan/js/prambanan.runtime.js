@@ -14,10 +14,19 @@
 
     var arraySlice = Array.prototype.slice;
 
+    prambanan.has_error = false;
     _.extend(prambanan, {
         load: function(file, fn){
+            if (prambanan.has_error)
+                return;
             prambanan.current_file = file;
-            helpers.wrap_on_error(fn)(prambanan);
+            try {
+                helpers.wrap_on_error(fn)(prambanan);
+            } catch(e){
+                prambanan.has_error = true;
+                throw e;
+            }
+
         }
     });
 
