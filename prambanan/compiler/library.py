@@ -22,12 +22,13 @@ class PrambananLibrary(object):
 def all_libraries(import_cache=None):
     providers = []
     import datetime
-    start = datetime.datetime.now()
+    all_start = datetime.datetime.now()
     eps = list(pkg_resources.iter_entry_points('prambanan.library'))
     for entry in eps:
+        start = datetime.datetime.now()
         provider_class = entry.load()
         provider = provider_class(entry.name, import_cache)
         providers.append(provider)
-        print datetime.datetime.now() - start
-    print datetime.datetime.now() - start
+        print "loading %s takes %s" % (entry.name, datetime.datetime.now() - start)
+    print "all prambanan loading takes %s" % (datetime.datetime.now() - all_start)
     return providers

@@ -181,13 +181,15 @@ def translate_py_file(translate_args, output, manager, file, native_file, modnam
 
     return translate(config, manager)
 
-def get_overridden_types(import_cache=None):
-    libraries = all_libraries(import_cache)
+def get_overridden_types(import_cache=None, libraries=None):
+    if libraries is None:
+        libraries = all_libraries(import_cache)
     overridden_types = dict([ (n,f) for l in libraries for n,f in l.get_overridden_types().items()])
     return overridden_types
 
-def get_available_modules(import_cache=None):
-    libraries = all_libraries(import_cache)
+def get_available_modules(import_cache=None, libraries=None):
+    if libraries is None:
+        libraries = all_libraries(import_cache)
     available_modules = dict([ (m.modname,m) for l in libraries for m in l.get_modules()])
     return available_modules
 
@@ -196,7 +198,7 @@ def generate_modules(translate_args, output_manager, manager, modules, overridde
     patch_astng_manager(manager)
 
     if overridden_types is None:
-        overridden_types = get_overridden_types()
+        overridden_types = get_overridden_types(manager, manager.libraries)
 
     for module in  modules:
         for type, file, modname in module.files():
@@ -214,6 +216,11 @@ def generate_modules(translate_args, output_manager, manager, modules, overridde
                     native_file = os.path.join(dir_name, name+"_native.js")
                 if not os.path.isfile(native_file):
                     native_file = None
+            elif type == "template":
+               template_name, template_configs = modname
+               from prambanan.template import get_provider
+               get_provider(template_name).compile(translate_args, output_manager, manager, template_configs)
+               continue
             else:
                 raise ValueError("type %s is not supported for file %s" % (type % file))
 
@@ -258,8 +265,13 @@ def modules_changed(output_manager, manager, modules):
                     native_file = os.path.join(dir_name, name+"_native.js")
                 if not os.path.isfile(native_file):
                     native_file = None
-            else:
-                raise ValueError("type %s is not supported for file %s" % (type % file))
+            elif type == "template":
+                template_type, template_configs = modname
+                from prambanan.template import get_provider
+                if get_provider(template_type).changed(output_manager, manager, template_configs):
+                    return True
+                else:
+                    continue
 
             output_manager.add(file, preferred_name)
             if output_manager.is_output_exists(file):
@@ -274,7 +286,7 @@ def generate_runtime(translate_args, output_manager, manager):
 
 
 def generate_imports(translate_args, output_manager, manager, import_names):
-    available_modules = get_available_modules()
+    available_modules = get_available_modules(manager, manager.libraries)
 
     used_modules = walk_imports(import_names, available_modules)
     for name in import_names:

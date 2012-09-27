@@ -142,25 +142,25 @@ def translate_code(translate_args, manager, output, code, package, path):
     translate(config, manager)
 
 def generate(translate_args, output_manager, manager, configs):
-    for package, path in configs:
-        template_file = pkg_resources.resource_filename(package, path)
-        name,ext = os.path.splitext(path)
-        preferred_name = "zpt.%s.%s" % (package, name.replace("/", "."))
+    package, path = configs
+    template_file = pkg_resources.resource_filename(package, path)
+    name,ext = os.path.splitext(path)
+    preferred_name = "zpt.%s.%s" % (package, name.replace("/", "."))
 
-        out_file = output_manager.add(template_file, preferred_name)
-        if not manager.is_file_changed(template_file) and output_manager.is_output_exists(template_file):
-            continue
+    out_file = output_manager.add(template_file, preferred_name)
+    if not manager.is_file_changed(template_file) and output_manager.is_output_exists(template_file):
+        return
 
-        output_manager.start(out_file)
-        parser = PTParser(template_file, binds=True)
+    output_manager.start(out_file)
+    parser = PTParser(template_file, binds=True)
 
-        output = StringIO() if translate_args.beautify else output_manager.out
-        translate_code(translate_args, manager, output, parser.code, package, path)
-        if translate_args.beautify:
-            output_manager.out.write(beautify(output.getvalue()))
+    output = StringIO() if translate_args.beautify else output_manager.out
+    translate_code(translate_args, manager, output, parser.code, package, path)
+    if translate_args.beautify:
+        output_manager.out.write(beautify(output.getvalue()))
 
-        output_manager.stop()
-        manager.mark_file_processed(template_file)
+    output_manager.stop()
+    manager.mark_file_processed(template_file)
 
 def get_imports(package, path):
     template_file = pkg_resources.resource_filename(package, path)

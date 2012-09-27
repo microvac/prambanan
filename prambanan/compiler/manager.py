@@ -24,8 +24,8 @@ class PrambananManager(ASTNGManager):
         else:
             self.file_stats = None
 
-        libraries = all_libraries(self)
-        libraries_modules = [ m for l in libraries for m in l.get_modules()]
+        self.libraries = all_libraries(self)
+        libraries_modules = [ m for l in self.libraries for m in l.get_modules()]
         all_modules = libraries_modules + modules + RUNTIME_MODULES
 
         for module in all_modules:

@@ -16,6 +16,42 @@ import inference
 
 logger = logging.getLogger("prambanan")
 
+class TemplateFinder(ASTWalker):
+
+    def __init__(self):
+        ASTWalker.__init__(self, self)
+        self.templates = []
+
+    def set_context(self, a, b):
+        pass
+
+    def visit_callfunc(self, c):
+        if inference.infer_qname(c.func) == "prambanan.native.get_template":
+            template_type =  inference.ConstEvaluator().visit(c.args[0])
+            template_config = inference.ConstEvaluator().visit(c.args[1])
+            template = (template_type, template_config)
+            if not template in self.templates:
+                self.templates.append(template)
+
+    @staticmethod
+    def find_templates(file, import_cache=None):
+        if import_cache is None:
+            print "import cache is none for find template %s" %file
+        results = None
+        if import_cache is not None:
+            results = import_cache.get_templates(file)
+
+        if results is None:
+            tree = builder.ASTNGBuilder().file_build(file)
+            finder = TemplateFinder()
+            finder.walk(tree)
+            results = finder.templates
+
+            if import_cache is not None:
+                import_cache.set_templates(file, results)
+        return results
+
+
 class ImportFinder(ASTWalker):
 
     def __init__(self, modname):
@@ -46,6 +82,8 @@ class ImportFinder(ASTWalker):
 
     @staticmethod
     def find_imports(file, modname, import_cache=None):
+        if import_cache is None:
+            print "import cache is none for modname %s" %modname
         results = None
         if import_cache is not None:
             results = import_cache.get_imports(file)
@@ -54,7 +92,8 @@ class ImportFinder(ASTWalker):
             tree = builder.ASTNGBuilder().file_build(file)
             finder = ImportFinder(modname)
             finder.walk(tree)
-            results =  set(finder.imports)
+            templates = TemplateFinder.find_templates(file, import_cache)
+            results =  set(finder.imports+templates)
 
             if import_cache is not None:
                 import_cache.set_imports(file, results)
@@ -65,64 +104,28 @@ class ImportFinder(ASTWalker):
         tree = builder.ASTNGBuilder().string_build(string)
         finder = ImportFinder("")
         finder.walk(tree)
-        return set(finder.imports)
-
-class TemplateFinder(ASTWalker):
-
-    def __init__(self):
-        ASTWalker.__init__(self, self)
-        self.templates = {}
-
-    def set_context(self, a, b):
-        pass
-
-    def visit_callfunc(self, c):
-        if inference.infer_qname(c.func) == "prambanan.native.get_template":
-            template_type =  inference.ConstEvaluator().visit(c.args[0])
-            template_config = inference.ConstEvaluator().visit(c.args[1])
-            if not template_type in self.templates:
-                self.templates[template_type] = []
-            if not template_config in self.templates[template_type]:
-                self.templates[template_type].append(template_config)
-
-
-    @staticmethod
-    def find_templates(file, import_cache=None):
-        results = None
-        if import_cache is not None:
-            results = import_cache.get_templates(file)
-
-        if results is None:
-            tree = builder.ASTNGBuilder().file_build(file)
-            finder = TemplateFinder()
-            finder.walk(tree)
-            results = finder.templates
-
-            if import_cache is not None:
-                import_cache.set_templates(file, results)
-        return results
+        template_finder = TemplateFinder()
+        template_finder.walk(tree)
+        return set(finder.imports+template_finder.templates)
 
 class Module(object):
-    def __init__(self, modname, dependencies, templates):
+    def __init__(self, modname, dependencies):
         self.modname = modname
 
         if dependencies is None:
             dependencies = set()
-        if templates is None:
-            templates = {}
 
         self.dependencies = dependencies
-        self.templates = templates
 
     def __str__(self):
         return "Module: %s" % self.modname
 
 class JavascriptModule(Module):
-    def __init__(self, paths, modname, dependencies=None, templates=None):
+    def __init__(self, paths, modname, dependencies=None):
         if isinstance(paths, str):
             paths = [paths]
         self.paths = paths
-        super(JavascriptModule, self).__init__(modname, dependencies, templates)
+        super(JavascriptModule, self).__init__(modname, dependencies)
 
     def files(self):
         for path in self.paths:
@@ -134,12 +137,22 @@ class PythonModule(Module):
             js_deps = []
         self.js_deps = js_deps
         self.path = path
-        super(PythonModule, self).__init__(modname, ImportFinder.find_imports(path, modname, import_cache), TemplateFinder.find_templates(path, import_cache))
+        super(PythonModule, self).__init__(modname, ImportFinder.find_imports(path, modname, import_cache))
 
     def files(self):
         for path in self.js_deps:
             yield ("js", path, self.modname)
         yield ("py", self.path, self.modname)
+
+class TemplateModule(Module):
+    def __init__(self, template_type, template_configs, import_cache=None):
+        mod_name = (template_type, template_configs)
+        from prambanan.template import get_provider
+        dependencies = get_provider(template_type).get_imports(template_configs)
+        super(TemplateModule, self).__init__(mod_name, dependencies)
+
+    def files(self):
+        yield ("template", None, self.modname)
 
 __base_js_lib = lambda name: pkg_resources.resource_filename("prambanan", "js/lib/"+name)
 __base_js = lambda name: pkg_resources.resource_filename("prambanan", "js/"+name)
