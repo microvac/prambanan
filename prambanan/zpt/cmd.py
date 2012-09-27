@@ -168,16 +168,15 @@ def get_imports(package, path):
     return ImportFinder.string_find_imports(parser.code)
 
 def template_changed(output_manager, manager, configs):
-    for package, path in configs:
-        template_file = pkg_resources.resource_filename(package, path)
-        name,ext = os.path.splitext(path)
-        preferred_name = "zpt.%s.%s" % (package, name.replace("/", "."))
+    package, path = configs
+    template_file = pkg_resources.resource_filename(package, path)
+    name,ext = os.path.splitext(path)
+    preferred_name = "zpt.%s.%s" % (package, name.replace("/", "."))
 
-        output_manager.add(template_file, preferred_name)
-        if not manager.is_file_changed(template_file) and output_manager.is_output_exists(template_file):
-            continue
-        return True
-    return False
+    output_manager.add(template_file, preferred_name)
+    if not manager.is_file_changed(template_file) and output_manager.is_output_exists(template_file):
+        return False
+    return True
 
 
 def find_all_templates(package):
