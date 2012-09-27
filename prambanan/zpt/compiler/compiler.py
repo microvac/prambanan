@@ -627,7 +627,7 @@ class NameTransform(object):
 
     """
 
-    def __init__(self, source, filename, builtins, aliases, internals, defined_models, get_current_el):
+    def __init__(self, source, filename, builtins, aliases, internals, defined_models, get_current_el, validate_model):
         self.source = source
         self.filename = filename
 
@@ -636,6 +636,7 @@ class NameTransform(object):
         self.internals = internals
         self.defined_models = defined_models
         self.get_current_el = get_current_el
+        self.validate_model = validate_model
 
     def __call__(self, node):
         name = node.id
@@ -646,7 +647,7 @@ class NameTransform(object):
         # defined here in the compiler.
 
         if isinstance(node.ctx, ast.Load):
-            if name.startswith("__model_"):
+            if self.validate_model and name.startswith("__model_"):
                 name = node.id[8:]
                 if not name in self.defined_models:
                     err = ParseError(
@@ -853,7 +854,7 @@ class Compiler(object):
 
     global_builtins = set(builtins.__dict__)
 
-    def __init__(self, engine_factory, node, builtins={}, strict=True, source=None, filename=None):
+    def __init__(self, engine_factory, node, builtins={}, strict=True, source=None, filename=None, validate_model=True):
         self._scopes = [set()]
         self._expression_cache = {}
         self._translations = []
@@ -878,6 +879,7 @@ class Compiler(object):
             internals,
             self._defined_models,
             self.get_current_el,
+            validate_model,
             )
 
         self._visitor = visitor = NameLookupRewriteVisitor(transform)
@@ -1103,6 +1105,8 @@ class Compiler(object):
 
 
         return functions
+
+    visit_DependencyOnlyProgram = visit_BindingProgram
 
     def visit_Context(self, node):
         return self.visit(node.node)

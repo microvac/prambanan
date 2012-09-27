@@ -35,8 +35,6 @@ class TemplateFinder(ASTWalker):
 
     @staticmethod
     def find_templates(file, import_cache=None):
-        if import_cache is None:
-            print "import cache is none for find template %s" %file
         results = None
         if import_cache is not None:
             results = import_cache.get_templates(file)
@@ -82,8 +80,6 @@ class ImportFinder(ASTWalker):
 
     @staticmethod
     def find_imports(file, modname, import_cache=None):
-        if import_cache is None:
-            print "import cache is none for modname %s" %modname
         results = None
         if import_cache is not None:
             results = import_cache.get_imports(file)

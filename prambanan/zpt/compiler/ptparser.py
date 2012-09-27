@@ -12,7 +12,7 @@ import ast
 import re
 from chameleon.zpt.template import  PageTemplate
 from prambanan.zpt import lookup_attr
-from prambanan.zpt.compiler.program import BindingProgram
+from prambanan.zpt.compiler.program import BindingProgram, DependencyOnlyProgram
 from chameleon.tales import PythonExpr
 
 
@@ -130,4 +130,30 @@ class PTParser(object):
         self.content_encoding = encoding
 
         return body
+
+class DependencyOnlyParser(PTParser):
+
+    default_encoding = "utf-8"
+
+    def __init__(self, filename, binds=False):
+        source = self.read(filename)
+        self.macros = {}
+        self.expression_types = PageTemplate.expression_types.copy()
+        self.expression_types["prambanan"] = PrambananExpr
+        self.default_expression = "prambanan"
+
+        default_marker = Builtin("False")
+
+        try:
+            program = DependencyOnlyProgram(
+                source, "xml", filename,
+                escape=True,
+                default_marker=default_marker,
+                binds=binds,
+            )
+            module = Module("initialize", program)
+            compiler = Compiler(self.engine, module, self._builtins(), strict=False, source=source, filename=filename, validate_model=False)
+            self.code = compiler.code
+        except TemplateError as e:
+            raise
 

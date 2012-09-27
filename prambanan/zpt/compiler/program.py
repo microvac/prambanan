@@ -442,3 +442,47 @@ class BindingProgram(MacroProgram):
         content = Content(value, key == "structure", translate)
         return content
 
+
+class DependencyOnlyProgram(MacroProgram):
+    DEFAULT_NAMESPACES = {
+        'xmlns': XMLNS_NS,
+        'xml': XML_NS,
+        'tal': TAL,
+        'i18n': I18N,
+        'meta': META,
+        'pramtal': PRAMTAL,
+        }
+    DROP_NS = TAL, I18N, META, PRAMTAL
+
+    def __init__(self, *args, **kwargs):
+        self.binds = kwargs.pop("binds", False)
+        super(DependencyOnlyProgram, self).__init__(*args, **kwargs)
+
+    def visit_element(self, start, end, children):
+        body = []
+        content = nodes.Sequence(body)
+        for child in children:
+            body.append(self.visit(*child))
+        return content
+
+
+    def visit_text(self, node):
+        self._last = node
+
+        translation = self.implicit_i18n_translate
+
+        if self._interpolation[-1] and '${' in node:
+            char_escape = ('&', '<', '>') if self.escape else ()
+            expression = nodes.Substitution(node, char_escape)
+            return nodes.Interpolation(expression, True, translation)
+
+        return nodes.Sequence([])
+
+    def visit_(self, node):
+        return nodes.Sequence([])
+
+    def visit_comment(self, node):
+        return nodes.Sequence([])
+
+    def visit_cdata(self, node):
+        return nodes.Sequence([])
