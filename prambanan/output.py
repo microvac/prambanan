@@ -1,11 +1,5 @@
 import os
 
-class OutputJob(object):
-
-    def __init__(self):
-        last_output
-
-
 class DirectoryOutputManager(object):
     out = None
 
