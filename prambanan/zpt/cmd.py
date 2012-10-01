@@ -165,7 +165,9 @@ def generate(translate_args, output_manager, manager, configs):
 def get_imports(package, path):
     template_file = pkg_resources.resource_filename(package, path)
     parser = DependencyOnlyParser(template_file, binds=False)
-    return ImportFinder.string_find_imports(parser.code)
+    results = ImportFinder.string_find_imports(parser.code)
+    results.add("prambanan.zpt")
+    return results
 
 def template_changed(output_manager, manager, configs):
     package, path = configs
