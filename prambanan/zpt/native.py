@@ -32,8 +32,7 @@ def el_stack_push(self, tag):
     self.tail = None
 
 def el_stack_node(self, child):
-    #todo unimplemented
-    pass
+    self.current.append(child)
 
 def el_stack_pop(self):
     self.tail = self.current
