@@ -6,6 +6,9 @@ window = None
 document = None
 wrap_on_error = None
 
+def ctor(typ):
+    return typ
+
 def items(d):
     return d.items()
 

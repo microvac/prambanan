@@ -1,5 +1,12 @@
 var $lib = this.prambanan;
 
+var ctor = function(typ){
+    return function(){
+        Array.prototype.splice.call(arguments, 0, 0, null);
+        return new (Function.prototype.bind.apply(typ, arguments));
+    };
+}
+
 var is_js= true;
 var items= function(obj){
     var results = [];

@@ -22,6 +22,18 @@ class LazyPageTemplate(object):
         exec(compiled, env)
         return PageTemplate(env["render"]).render(el, model, vars)
 
+def create_unlazy_template(package, filename):
+
+    from prambanan.zpt import PageTemplate
+    from prambanan.zpt.compiler.ptparser import PTParser
+
+    file = pkg_resources.resource_filename(package, filename)
+    pt = PTParser(file, binds=True)
+    compiled = compile(pt.code, filename, "exec")
+    env = {}
+    exec(compiled, env)
+    return PageTemplate(env["render"])
+
 class ZPTTemplate(Template):
 
     def get(self, template_config):
