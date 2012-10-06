@@ -5,22 +5,33 @@ from prambanan.compiler import TemplateModule
 from prambanan.zpt.cmd import template_changed, generate, get_imports
 from prambanan.template import Template
 
-class LazyPageTemplate(object):
+class CheckingPageTemplate(object):
 
     def __init__(self, package, filename):
         self.package = package
         self.filename = filename
+        self.file = pkg_resources.resource_filename(self.package, self.filename)
 
-    def render(self, el, model, vars=None):
+        self.compile()
+
+
+    def compile(self):
         from prambanan.zpt import PageTemplate
         from prambanan.zpt.compiler.ptparser import PTParser
 
-        file = pkg_resources.resource_filename(self.package, self.filename)
-        pt = PTParser(file)
+        pt = PTParser(self.file, binds=True)
         compiled = compile(pt.code, self.filename, "exec")
         env = {}
         exec(compiled, env)
-        return PageTemplate(env["render"]).render(el, model, vars)
+        self.compiled = PageTemplate(env["render"])
+        self.compiled_mtime = os.path.getmtime(self.file)
+
+    def render(self, el, model, vars=None):
+        new_mtime = os.path.getmtime(self.file)
+        if new_mtime > self.compiled_mtime:
+            self.compile()
+
+        return self.compiled.render(el, model, vars)
 
 def create_unlazy_template(package, filename):
 
@@ -38,7 +49,7 @@ class ZPTTemplate(Template):
 
     def get(self, template_config):
         package, filename = template_config
-        return LazyPageTemplate(package, filename)
+        return CheckingPageTemplate(package, filename)
 
     def compile(self, translate_args, output_manager, manager, template_configs):
         generate(translate_args, output_manager, manager, template_configs)
