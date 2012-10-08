@@ -219,7 +219,7 @@ def generate_modules(translate_args, output_manager, manager, modules, overridde
             elif type == "template":
                template_name, template_configs = modname
                from prambanan.template import get_provider
-               get_provider(template_name).compile(translate_args, output_manager, manager, template_configs)
+               manager.template_providers[template_name].compile(translate_args, output_manager, manager, template_configs)
                continue
             else:
                 raise ValueError("type %s is not supported for file %s" % (type % file))

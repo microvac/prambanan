@@ -4,6 +4,7 @@ from prambanan.compiler.library import all_libraries
 
 import pickle
 import os
+from prambanan.template import all_providers
 
 class PrambananManager(ASTNGManager):
 
@@ -25,6 +26,8 @@ class PrambananManager(ASTNGManager):
             self.file_stats = None
 
         self.libraries = all_libraries(self)
+        self.template_providers = all_providers()
+
         libraries_modules = [ m for l in self.libraries for m in l.get_modules()]
         all_modules = libraries_modules + modules + RUNTIME_MODULES
 
