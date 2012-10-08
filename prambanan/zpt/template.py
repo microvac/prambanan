@@ -11,8 +11,7 @@ class CheckingPageTemplate(object):
         self.package = package
         self.filename = filename
         self.file = pkg_resources.resource_filename(self.package, self.filename)
-
-        self.compile()
+        self.compiled = None
 
 
     def compile(self):
@@ -27,9 +26,12 @@ class CheckingPageTemplate(object):
         self.compiled_mtime = os.path.getmtime(self.file)
 
     def render(self, el, model, vars=None):
-        new_mtime = os.path.getmtime(self.file)
-        if new_mtime > self.compiled_mtime:
+        if self.compiled is None:
             self.compile()
+        else:
+            new_mtime = os.path.getmtime(self.file)
+            if new_mtime > self.compiled_mtime:
+                self.compile()
 
         return self.compiled.render(el, model, vars)
 
