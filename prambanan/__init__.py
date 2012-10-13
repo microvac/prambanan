@@ -13,8 +13,11 @@ def JS_noop(target):
 def select(fn, py, js):
     return js if is_js else py
 
-def load_module_attr(module_attr):
-    module_name, attr = module_attr.split(":")
+def to_qname(cls):
+    return "%s:%s" % (cls.__module__, cls.__name__)
+
+def load_qname(qname):
+    module_name, attr = qname.split(":")
     module = __import__(module_name)
     splitted = module_name.split(".")
     for i in range(1, len(splitted)):
