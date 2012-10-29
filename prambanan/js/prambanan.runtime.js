@@ -201,6 +201,12 @@
             return result;
         }
         return dft;
+        },
+        __setitem__:function(index, value){
+            this.items[index] = value;
+        },
+        __getitem__:function(index, value){
+            return this.items[index];
         }
     });
 
