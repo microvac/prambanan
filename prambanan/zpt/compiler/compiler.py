@@ -25,7 +25,6 @@ from chameleon.codegen import template
 
 from chameleon.tal import ErrorInfo
 from chameleon.tal import NAME
-from chameleon.i18n import fast_translate
 
 from chameleon.nodes import Text
 from chameleon.nodes import Value
