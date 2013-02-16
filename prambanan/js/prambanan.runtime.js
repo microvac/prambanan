@@ -843,6 +843,10 @@
             }
         });
         prambanan.patch(name);
+    })();
+
+    (function(){
+        var name = "python.Number";
 
         prambanan.registerPrototypePatch(name, Number.prototype, {
             __mod__: function (value) {
