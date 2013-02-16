@@ -19,7 +19,7 @@ setup(name='prambanan',
       zip_safe=False,
       install_requires=[
           "simplejson",
-          "chameleon",
+          "chameleon==2.9.2",
           "logilab_astng",
           "lxml==2.3",
 		  "pyparsing",
